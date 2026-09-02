@@ -1572,8 +1572,13 @@ async def admin_tasks(update, context):
     for t in items[:30]:
         status = "🟢" if t.get("enabled", True) else "🔴"
         tid = str(t.get("id"))
-        buttons.append([InlineKeyboardButton(f"{status} {t.get('title', tid)} | +{t.get('reward',0)}", callback_data=f"admin_task_toggle_{tid}")])
-        buttons.append([InlineKeyboardButton(f"🗑 Delete {tid}", callback_data=f"admin_task_delete_{tid}")])
+        title = str(t.get('title', tid))[:40]
+        action = "🔴 Disable" if t.get("enabled", True) else "🟢 Enable"
+        buttons.append([InlineKeyboardButton(f"{status} {title} | +{t.get('reward',0)}", callback_data=f"admin_task_toggle_{tid}")])
+        buttons.append([
+            InlineKeyboardButton(action, callback_data=f"admin_task_toggle_{tid}"),
+            InlineKeyboardButton("🗑 Delete", callback_data=f"admin_task_delete_{tid}"),
+        ])
     buttons.append([InlineKeyboardButton("🔙 Admin Panel", callback_data="admin")])
     await query.edit_message_text(
         "🎯 **TASK MANAGEMENT**\n\n"
@@ -1599,7 +1604,12 @@ async def admin_task_toggle(update, context):
     if not q or not admin_only(q.from_user.id): return
     tid=str(q.data).replace("admin_task_toggle_", "", 1); task=next((x for x in get_tasks(True) if str(x.get("id"))==tid),None)
     if not task: await q.answer("Task not found.", show_alert=True); return
-    new=not bool(task.get("enabled",True)); set_task_enabled(tid,new); await q.answer("🟢 Enabled" if new else "🔴 Disabled"); await admin_tasks(update,context)
+    new = not bool(task.get("enabled", True))
+    if not set_task_enabled(tid, new):
+        await q.answer("⚠️ Could not change task status.", show_alert=True)
+        return
+    await q.answer("🟢 Task enabled" if new else "🔴 Task disabled")
+    await admin_tasks(update, context)
 
 async def admin_task_delete(update, context):
     q=update.callback_query
