@@ -32,3 +32,4 @@ Set the variables from `.env.example`. Never commit real tokens or API keys.
 - `/postback/cpagrip`
 
 Use HTTPS and the exact provider postback URL shown in your provider dashboard.
+\n\n### Deployment hotfix\n- Premium/VIP admin toggle persistence is resilient to callback acknowledgement.\n- Task index initialization safely handles an existing differently named `id` index.\n

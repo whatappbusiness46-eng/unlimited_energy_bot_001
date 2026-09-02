@@ -23,8 +23,33 @@ def _safe_int(v, d=0):
 
 
 def ensure_task_indexes():
-    try: tasks_collection.create_index("id", unique=True)
-    except Exception: logger.exception("task index creation failed")
+    """Ensure the task id index exists without IndexOptionsConflict.
+
+    Older deployments may have the same key pattern named differently
+    (for example ``id_1``).  MongoDB rejects creating a second index with
+    the same key pattern but a different name, so inspect existing indexes
+    first and only create/repair what is actually needed.
+    """
+    try:
+        indexes = tasks_collection.index_information()
+        for name, info in indexes.items():
+            key = info.get("key")
+            if key == [("id", 1)]:
+                # Reuse an existing unique index. If it is non-unique,
+                # replace it so duplicate task IDs cannot be created.
+                if info.get("unique", False):
+                    return name
+                if name != "_id_":
+                    tasks_collection.drop_index(name)
+                break
+        return tasks_collection.create_index(
+            [("id", 1)],
+            unique=True,
+            name="task_id_unique",
+        )
+    except Exception:
+        logger.exception("task index creation failed")
+        return None
 
 
 ensure_task_indexes()

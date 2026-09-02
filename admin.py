@@ -2936,44 +2936,43 @@ async def admin_vip_toggle(
 
     try:
         current = is_vip_purchase_enabled()
-
         new_status = not current
 
-        success = set_vip_purchase_enabled(
-            new_status
+        # Persist the setting directly as a small, atomic upsert.
+        # This avoids failures caused by unrelated optional settings code.
+        result = db["bot_settings"].update_one(
+            {"_id": "main"},
+            {"$set": {"vip_purchase_enabled": bool(new_status)}},
+            upsert=True,
         )
 
-        if not success:
+        if not (result.acknowledged):
             await query.answer(
                 "❌ Failed to change VIP status.",
                 show_alert=True,
             )
             return
 
-        status = (
-            "🟢 ON"
-            if new_status
-            else "🔴 OFF"
-        )
+        status = "🟢 ON" if new_status else "🔴 OFF"
 
-        await query.answer(
-            f"VIP Purchase: {status}"
-        )
+        try:
+            await query.answer(f"VIP Purchase: {status}")
+        except Exception:
+            # The callback may already have been acknowledged by the
+            # central callback router.
+            pass
 
-        await admin_panel(
-            update,
-            context,
-        )
+        await admin_panel(update, context)
 
     except Exception:
-        logger.exception(
-            "VIP purchase toggle failed"
-        )
-
-        await query.answer(
-            "⚠️ VIP setting failed.",
-            show_alert=True,
-    )
+        logger.exception("VIP purchase toggle failed")
+        try:
+            await query.answer(
+                "⚠️ VIP setting failed.",
+                show_alert=True,
+            )
+        except Exception:
+            pass
 # ==================================================
 # ADMIN CALLBACK ROUTER
 # ==================================================
