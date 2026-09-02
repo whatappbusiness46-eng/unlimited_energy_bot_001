@@ -16,6 +16,7 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from config import (
+    ADMIN_USERNAME,
     GROUPS,
     VIP_PRICE,
     VIP_DAYS,
@@ -26,6 +27,7 @@ from database import (
     remove_balance,
     add_balance,
     add_activity,
+    convert_bonus_to_balance,
     record_transaction,
  # existing imports...
     is_vip_purchase_enabled,
@@ -74,7 +76,6 @@ from offers import (
 from earn import (
     earn_page,
     daily_bonus,
-    tasks,
     shortlinks,
     spin_wheel,
     lucky_box,
@@ -82,6 +83,11 @@ from earn import (
     energy_page,
     claim_test_task,
 )
+
+from tasks import tasks_page as task_menu_page, task_callback, task_complete_callback
+
+from payments import method_keyboard, payment_instructions, create_payment, submit_reference, get_payment
+from config import PREMIUM_CASH_PRICE, VIP1_CASH_PRICE, VIP2_CASH_PRICE, VIP3_CASH_PRICE, VIP4_CASH_PRICE, VIP5_CASH_PRICE
 
 from shortlinks import (
     shortlinks_page,
@@ -208,7 +214,10 @@ async def show_balance(
         f"💵 **Total Balance: "
         f"{total} Points**",
 
-        reply_markup=home_keyboard(),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Convert Bonus → Balance", callback_data="bonus_convert")],
+            [InlineKeyboardButton("🏠 Home", callback_data="home")],
+        ]) if int(bonus or 0) > 0 else home_keyboard(),
 
         parse_mode="Markdown",
     )
@@ -831,7 +840,7 @@ async def show_help(
         "📜 Activity — View recent activity\n\n"
 
         "🆘 Need help?\n"
-        "Contact the Admin.",
+        f"Contact the Admin: @{ADMIN_USERNAME}" if ADMIN_USERNAME else f"Contact the Admin: @{ADMIN_USERNAME}" if ADMIN_USERNAME else "Contact the Admin.",
 
         reply_markup=home_keyboard(),
 
@@ -1214,6 +1223,15 @@ async def button_callback(
     # BALANCE
     # ========================================================
 
+    if data == "bonus_convert":
+        amount = convert_bonus_to_balance(query.from_user.id)
+        if amount:
+            await query.answer(f"✅ {amount} bonus points converted.", show_alert=True)
+        else:
+            await query.answer("❌ No convertible bonus balance.", show_alert=True)
+        await show_balance(query, query.from_user.id)
+        return
+
     if data == "balance":
         await show_balance(
             query,
@@ -1382,6 +1400,19 @@ async def button_callback(
         return
 
     # ========================================================
+    # TASKS
+    # ========================================================
+    if data == "tasks":
+        await task_menu_page(update, context)
+        return
+    if data.startswith("task_complete_"):
+        await task_complete_callback(update, context)
+        return
+    if data.startswith("task_"):
+        await task_callback(update, context)
+        return
+
+    # ========================================================
     # PREMIUM
     # ========================================================
 
@@ -1406,6 +1437,41 @@ async def button_callback(
     # --------------------------------------------------------
     # PREMIUM PURCHASE
     # --------------------------------------------------------
+
+    if data == "premium_renew":
+        await query.answer()
+        await query.edit_message_text("💳 **PREMIUM RENEWAL**\n\nChoose a payment method:", reply_markup=method_keyboard("premium"), parse_mode="Markdown")
+        return
+
+    if data == "premium_buy":
+        await query.answer()
+        await query.edit_message_text("💳 **PREMIUM PAYMENT**\n\nChoose a payment method:", reply_markup=method_keyboard("premium"), parse_mode="Markdown")
+        return
+
+    if data.startswith("pay_method_"):
+        await query.answer()
+        try:
+            _, rest = data.split("pay_method_",1); method, product = rest.split(":",1)
+        except ValueError:
+            await query.edit_message_text("⚠️ Invalid payment option."); return
+        if product == "premium": price = PREMIUM_CASH_PRICE
+        elif product.startswith("vip:"):
+            prices={1:VIP1_CASH_PRICE,2:VIP2_CASH_PRICE,3:VIP3_CASH_PRICE,4:VIP4_CASH_PRICE,5:VIP5_CASH_PRICE}
+            try: price=prices[int(product.split(":",1)[1])]
+            except Exception: await query.edit_message_text("⚠️ Invalid VIP level."); return
+        else: await query.edit_message_text("⚠️ Invalid product."); return
+        pay=create_payment(query.from_user.id,product,price,method)
+        await query.edit_message_text(payment_instructions(method,product,price), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🧾 Submit Transaction ID",callback_data=f"pay_submit:{pay['payment_id']}")],[InlineKeyboardButton("🏠 Home",callback_data="home")]]), parse_mode="Markdown")
+        return
+
+    if data.startswith("pay_submit:"):
+        await query.answer()
+        pid=data.split(":",1)[1]; pay=get_payment(pid)
+        if not pay or int(pay.get("user_id",0))!=query.from_user.id or pay.get("status")!="pending":
+            await query.edit_message_text("⚠️ Payment request is invalid or already processed.", reply_markup=home_keyboard()); return
+        context.user_data["payment_reference_id"]=pid; context.user_data["admin_action"]="payment_reference"
+        await query.edit_message_text("🧾 Send your payment **Transaction ID / reference** now.", reply_markup=home_keyboard(), parse_mode="Markdown")
+        return
 
     if data == "premium_buy":
         try:
@@ -1616,6 +1682,15 @@ async def button_callback(
     # ========================================================
     # VIP PAID PURCHASE
     # ========================================================
+
+    if data.startswith("vip_level_"):
+        try: level=int(data.rsplit("_",1)[1])
+        except Exception: await query.edit_message_text("⚠️ Invalid VIP level."); return
+        prices={1:VIP1_CASH_PRICE,2:VIP2_CASH_PRICE,3:VIP3_CASH_PRICE,4:VIP4_CASH_PRICE,5:VIP5_CASH_PRICE}
+        if level not in prices: await query.edit_message_text("⚠️ Invalid VIP level."); return
+        await query.answer(); product=f"vip:{level}"; price=prices[level]
+        await query.edit_message_text(f"💎 **VIP {level} PAYMENT**\n\n💰 Price: **৳{price:g}**\n⏳ Duration: **30 days**\n\nChoose a payment method:", reply_markup=method_keyboard(product), parse_mode="Markdown")
+        return
 
     if data.startswith("vip_level_"):
 

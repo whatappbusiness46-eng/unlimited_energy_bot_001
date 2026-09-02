@@ -13,6 +13,8 @@ from telegram import (
 )
 from telegram.ext import ContextTypes
 
+from config import VIP1_CASH_PRICE, VIP2_CASH_PRICE, VIP3_CASH_PRICE, VIP4_CASH_PRICE, VIP5_CASH_PRICE
+
 from database import (
     get_user,
     get_vip_status,
@@ -704,39 +706,40 @@ async def vip_page(
             "🥇 VIP 3 — 1.50x + 2 Spins\n"
             "💎 VIP 4 — 1.75x + 3 Spins\n"
             "👑 VIP 5 — 2.00x + 4 Spins\n\n"
-            "💰 **Prices:**\n"
-            f"VIP 1 — {VIP_PRICES[1]}\n"
-            f"VIP 2 — {VIP_PRICES[2]}\n"
-            f"VIP 3 — {VIP_PRICES[3]}\n"
-            f"VIP 4 — {VIP_PRICES[4]}\n"
-            f"VIP 5 — {VIP_PRICES[5]}\n\n"
+            "💰 **Cash Prices:**\n"
+            f"VIP 1 — ৳{VIP1_CASH_PRICE:g}\n"
+            f"VIP 2 — ৳{VIP2_CASH_PRICE:g}\n"
+            f"VIP 3 — ৳{VIP3_CASH_PRICE:g}\n"
+            f"VIP 4 — ৳{VIP4_CASH_PRICE:g}\n"
+            f"VIP 5 — ৳{VIP5_CASH_PRICE:g}\n\n"
+            "💳 Payment: bKash / Nagad / Bybit\n"
             "Select a level to purchase."
         )
 
     keyboard = [
         [
             InlineKeyboardButton(
-                f"VIP 1 — {VIP_PRICES[1]}",
+                f"VIP 1 — ৳{VIP1_CASH_PRICE:g}",
                 callback_data="vip_level_1",
             ),
             InlineKeyboardButton(
-                f"VIP 2 — {VIP_PRICES[2]}",
+                f"VIP 2 — ৳{VIP2_CASH_PRICE:g}",
                 callback_data="vip_level_2",
             ),
         ],
         [
             InlineKeyboardButton(
-                f"VIP 3 — {VIP_PRICES[3]}",
+                f"VIP 3 — ৳{VIP3_CASH_PRICE:g}",
                 callback_data="vip_level_3",
             ),
             InlineKeyboardButton(
-                f"VIP 4 — {VIP_PRICES[4]}",
+                f"VIP 4 — ৳{VIP4_CASH_PRICE:g}",
                 callback_data="vip_level_4",
             ),
         ],
         [
             InlineKeyboardButton(
-                f"VIP 5 — {VIP_PRICES[5]}",
+                f"VIP 5 — ৳{VIP5_CASH_PRICE:g}",
                 callback_data="vip_level_5",
             )
         ],

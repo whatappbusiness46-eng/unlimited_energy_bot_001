@@ -15,6 +15,8 @@ from telegram import (
 
 from telegram.ext import ContextTypes
 
+from config import ADMIN_USERNAME
+
 from database import (
     create_user,
     get_user,
@@ -729,7 +731,7 @@ async def help_command(
         "📜 Activity — View recent activity\n\n"
 
         "🆘 Need help?\n"
-        "Contact the Admin.",
+        f"Contact the Admin: @{ADMIN_USERNAME}" if ADMIN_USERNAME else f"Contact the Admin: @{ADMIN_USERNAME}" if ADMIN_USERNAME else "Contact the Admin.",
 
         parse_mode="Markdown",
     )

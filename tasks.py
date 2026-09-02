@@ -1,368 +1,155 @@
 # ============================================================
-# TASKS SYSTEM
+# TASK SYSTEM - MongoDB backed, admin managed
 # ============================================================
-
 import logging
 import time
-from typing import Any, Dict, Iterable, Optional
-
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
+from typing import Any, Dict, Optional
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-
-from database import (
-    get_user,
-    update_user,
-    add_balance,
-    add_activity,
-)
+from database import db, get_user, update_user, add_balance, add_activity
 
 logger = logging.getLogger(__name__)
-
-TASKS: Dict[str, Dict[str, Any]] = {}
+tasks_collection = db["tasks"]
 TASK_COOLDOWN = 86400
-DEFAULT_REWARD = 0
+DEFAULT_REWARD = 10
+DEFAULT_XP = 5
+DEFAULT_ENERGY = 1
 
 
-def _now() -> int:
-    return int(time.time())
+def _now(): return int(time.time())
+def _safe_int(v, d=0):
+    try: return int(v)
+    except (TypeError, ValueError): return d
 
 
-def _safe_int(value, default=0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
+def ensure_task_indexes():
+    try: tasks_collection.create_index("id", unique=True)
+    except Exception: logger.exception("task index creation failed")
 
 
-def _get_user(user_id):
-    try:
-        return get_user(user_id, create=False)
-    except TypeError:
-        return get_user(user_id)
+ensure_task_indexes()
+
+def seed_default_task():
+    # No fake/test task is inserted. Admin creates real tasks.
+    ensure_task_indexes()
 
 
-def _blocked(user: Optional[dict]) -> bool:
-    return bool(
-        not user
-        or user.get("banned", False)
-        or user.get("blacklisted", False)
-    )
-
-
-def register_task(
-    task_id: str,
-    title: str,
-    description: str = "",
-    reward: int = DEFAULT_REWARD,
-    url: Optional[str] = None,
-    cooldown: int = TASK_COOLDOWN,
-    enabled: bool = True,
-) -> bool:
+def register_task(task_id: str, title: str, description: str = "", reward: int = DEFAULT_REWARD,
+                  url: Optional[str] = None, cooldown: int = TASK_COOLDOWN, enabled: bool = True,
+                  xp: int = DEFAULT_XP, energy: int = DEFAULT_ENERGY) -> bool:
     task_id = str(task_id).strip()
-    reward = _safe_int(reward, 0)
-    cooldown = max(0, _safe_int(cooldown, TASK_COOLDOWN))
-
-    if not task_id or reward < 0:
-        return False
-
-    TASKS[task_id] = {
-        "id": task_id,
-        "title": str(title or task_id),
-        "description": str(description or ""),
-        "reward": reward,
-        "url": url,
-        "cooldown": cooldown,
-        "enabled": bool(enabled),
-    }
-    return True
+    if not task_id or len(task_id) > 50: return False
+    doc = {"id": task_id, "title": str(title or task_id)[:120], "description": str(description or "")[:1000],
+           "reward": max(0, _safe_int(reward)), "url": url, "cooldown": max(0, _safe_int(cooldown, TASK_COOLDOWN)),
+           "enabled": bool(enabled), "xp": max(0, _safe_int(xp, DEFAULT_XP)), "energy": max(0, _safe_int(energy, DEFAULT_ENERGY)),
+           "updated_at": _now(), "created_at": _now()}
+    try:
+        tasks_collection.update_one({"id": task_id}, {"$set": doc, "$setOnInsert": {"created_at": _now()}}, upsert=True)
+        return True
+    except Exception: logger.exception("register task failed"); return False
 
 
-def get_tasks(include_disabled: bool = False):
-    return [
-        dict(task)
-        for task in TASKS.values()
-        if include_disabled or task.get("enabled", True)
-    ]
+def get_tasks(include_disabled=False):
+    q = {} if include_disabled else {"enabled": True}
+    return list(tasks_collection.find(q, {"_id": 0}).sort("created_at", 1))
 
 
-def get_task(task_id: str):
-    task = TASKS.get(str(task_id))
-    return dict(task) if task else None
+def get_task(task_id):
+    return tasks_collection.find_one({"id": str(task_id)}, {"_id": 0})
 
 
-def _completed_map(user: dict) -> dict:
-    value = user.get("completed_tasks", {})
+def set_task_enabled(task_id, enabled):
+    return tasks_collection.update_one({"id": str(task_id)}, {"$set": {"enabled": bool(enabled), "updated_at": _now()}}).modified_count > 0
+
+
+def delete_task(task_id):
+    return tasks_collection.delete_one({"id": str(task_id)}).deleted_count > 0
+
+
+def _completed_map(user):
+    value = user.get("task_history", {})
     return dict(value) if isinstance(value, dict) else {}
 
 
-def task_available(user_id, task_id: str) -> bool:
-    user = _get_user(user_id)
+def task_available(user_id, task_id):
+    user = get_user(user_id, create=False)
     task = get_task(task_id)
-
-    if _blocked(user) or not task or not task["enabled"]:
-        return False
-
-    completed = _completed_map(user)
-    last = _safe_int(completed.get(task_id, 0), 0)
-
-    if last <= 0:
-        return True
-
-    cooldown = max(0, _safe_int(task.get("cooldown", 0), 0))
-    return _now() - last >= cooldown
+    if not user or user.get("banned") or user.get("blacklisted") or not task or not task.get("enabled", True): return False
+    last = _safe_int(_completed_map(user).get(str(task_id)), 0)
+    return not last or _now() - last >= max(0, _safe_int(task.get("cooldown"), TASK_COOLDOWN))
 
 
-def complete_task(user_id, task_id: str) -> bool:
-    user = _get_user(user_id)
-    task = get_task(task_id)
+def _daily_count(user):
+    now = _now(); reset = _safe_int(user.get("task_day_started"), 0)
+    if not reset or now - reset >= 86400: return 0, now
+    return _safe_int(user.get("daily_task_count"), 0), reset
 
-    if _blocked(user) or not task or not task["enabled"]:
-        return False
 
-    if not task_available(user_id, task_id):
-        return False
-
-    reward = _safe_int(task.get("reward", 0), 0)
-    completed = _completed_map(user)
-    completed[str(task_id)] = _now()
-
-    try:
-        result = update_user(
-            user_id,
-            {"completed_tasks": completed},
-        )
-        if result is False:
-            return False
-
-        if reward > 0:
-            result = add_balance(user_id, reward)
-            if result is False:
-                return False
-
-            try:
-                add_activity(
-                    user_id,
-                    f"✅ Task completed: {task['title']}",
-                    reward,
-                )
-            except Exception:
-                logger.exception(
-                    "Task activity failed | user=%s task=%s",
-                    user_id,
-                    task_id,
-                )
-
-        return True
-
-    except Exception:
-        logger.exception(
-            "Task completion failed | user=%s task=%s",
-            user_id,
-            task_id,
-        )
-        return False
+def complete_task(user_id, task_id):
+    user = get_user(user_id, create=False); task = get_task(task_id)
+    if not user or not task or not task.get("enabled", True) or user.get("banned") or user.get("blacklisted"): return False, "Unavailable."
+    settings = db["bot_settings"].find_one({"_id": "main"}) or {}
+    daily_limit = max(1, _safe_int(settings.get("daily_task_limit"), 20))
+    count, reset = _daily_count(user)
+    if count >= daily_limit: return False, "Daily task limit reached."
+    if not task_available(user_id, task_id): return False, "Task is on cooldown."
+    energy_cost = max(0, _safe_int(task.get("energy"), 1))
+    if energy_cost:
+        # use database's atomic energy helper if available
+        from database import use_energy
+        if not use_energy(user_id, energy_cost): return False, "Not enough Energy."
+    reward = max(0, _safe_int(task.get("reward"), 0)); xp = max(0, _safe_int(task.get("xp"), 0))
+    history = _completed_map(user); history[str(task_id)] = _now()
+    update_user(user_id, {"task_history": history, "daily_task_count": count + 1, "task_day_started": reset})
+    if reward: add_balance(user_id, reward)
+    if xp:
+        from database import add_xp
+        add_xp(user_id, xp)
+    try: add_activity(user_id, f"Task completed: {task.get('title')}", reward)
+    except Exception: pass
+    return True, "OK"
 
 
 def tasks_menu(user_id=None):
-    keyboard = []
-
+    buttons=[]
     for task in get_tasks():
-        task_id = task["id"]
-        label = f"🎯 {task['title']}"
-        if user_id is not None and not task_available(user_id, task_id):
-            label = f"✅ {task['title']}"
+        available = task_available(user_id, task["id"]) if user_id else True
+        buttons.append([InlineKeyboardButton(f"{'🎯' if available else '⏳'} {task['title']} (+{task.get('reward',0)})", callback_data=f"task_{task['id']}")])
+    buttons.append([InlineKeyboardButton("🏠 Home", callback_data="home")])
+    return InlineKeyboardMarkup(buttons)
 
-        keyboard.append([
-            InlineKeyboardButton(
-                label,
-                callback_data=f"task_{task_id}",
-            )
-        ])
-
-    keyboard.append([
-        InlineKeyboardButton("🏠 Home", callback_data="home")
-    ])
-    return InlineKeyboardMarkup(keyboard)
-
-
-async def tasks_page(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    user = update.effective_user
-    message = update.effective_message
-    if not user or not message:
-        return
-
-    db_user = _get_user(user.id)
-    if _blocked(db_user):
-        await message.reply_text("🚫 Your account is restricted.")
-        return
-
-    task_list = get_tasks()
-
-    if not task_list:
-        text = "🎯 **TASKS**\n\nNo tasks are available right now."
+async def tasks_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user; message = update.effective_message
+    if not user or not message: return
+    db_user=get_user(user.id, create=False)
+    if not db_user or db_user.get("banned") or db_user.get("blacklisted"):
+        await message.reply_text("🚫 Your account is restricted."); return
+    task_list=get_tasks(); count,_=_daily_count(db_user); settings=db["bot_settings"].find_one({"_id":"main"}) or {}; limit=max(1,_safe_int(settings.get("daily_task_limit"),20))
+    if not task_list: text="📋 **TASK CENTER**\n\nNo tasks are available right now."
     else:
-        lines = ["🎯 **TASKS**", "", "Complete tasks to earn rewards:", ""]
-        for task in task_list:
-            status = "🟢 Available" if task_available(user.id, task["id"]) else "🔴 Cooldown"
-            lines.append(
-                f"{status} — {task['title']} (+{task['reward']})"
-            )
-        text = "\n".join(lines)
+        lines=["📋 **TASK CENTER**","",f"📊 Daily Tasks: {count}/{limit}","","Complete an available task:"]
+        for t in task_list: lines.append(f"{'🟢' if task_available(user.id,t['id']) else '🔴'} {t['title']} — +{t.get('reward',0)} Points")
+        text="\n".join(lines)
+    await message.reply_text(text, reply_markup=tasks_menu(user.id), parse_mode="Markdown")
 
-    await message.reply_text(
-        text,
-        reply_markup=tasks_menu(user.id),
-        parse_mode="Markdown",
-    )
+async def task_callback(update, context):
+    q=update.callback_query
+    if not q or not str(q.data).startswith("task_"): return
+    await q.answer(); tid=str(q.data)[5:]; task=get_task(tid)
+    if not task: await q.edit_message_text("⚠️ Task not found."); return
+    buttons=[]
+    if task.get("url"): buttons.append([InlineKeyboardButton("🚀 Open Task", url=task["url"])])
+    buttons.append([InlineKeyboardButton("✅ Verify Task", callback_data=f"task_complete_{tid}")])
+    buttons.append([InlineKeyboardButton("⬅️ Tasks", callback_data="tasks"), InlineKeyboardButton("🏠 Home", callback_data="home")])
+    await q.edit_message_text(f"🎯 **{task['title']}**\n\n{task.get('description','')}\n\n💰 Reward: {task.get('reward',0)} Points\n⭐ XP: {task.get('xp',0)}\n⚡ Energy: {task.get('energy',0)}", reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
 
+async def task_complete_callback(update, context):
+    q=update.callback_query
+    if not q or not str(q.data).startswith("task_complete_"): return
+    await q.answer(); tid=str(q.data)[len("task_complete_"):]; task=get_task(tid)
+    if not task: await q.edit_message_text("⚠️ Task not found."); return
+    ok,msg=complete_task(q.from_user.id,tid)
+    await q.edit_message_text((f"🎉 **TASK COMPLETED!**\n\n🎯 {task['title']}\n💰 +{task.get('reward',0)} Points" if ok else f"❌ **Task not completed**\n\n{msg}"), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Tasks",callback_data="tasks")],[InlineKeyboardButton("🏠 Home",callback_data="home")]]), parse_mode="Markdown")
 
-async def task_callback(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    query = update.callback_query
-    if not query:
-        return
-
-    await query.answer()
-
-    user = query.from_user
-    data = str(query.data or "")
-
-    if not data.startswith("task_"):
-        return
-
-    task_id = data[5:]
-    task = get_task(task_id)
-
-    if not task:
-        await query.edit_message_text(
-            "⚠️ Task not found.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ Tasks", callback_data="tasks")],
-                [InlineKeyboardButton("🏠 Home", callback_data="home")],
-            ]),
-        )
-        return
-
-    if task.get("url"):
-        keyboard = [
-            [InlineKeyboardButton("🚀 Open Task", url=task["url"])],
-            [InlineKeyboardButton(
-                "✅ Verify Task",
-                callback_data=f"task_complete_{task_id}",
-            )],
-            [InlineKeyboardButton("🏠 Home", callback_data="home")],
-        ]
-        text = (
-            f"🎯 **{task['title']}**\n\n"
-            f"{task['description']}\n\n"
-            f"💰 Reward: {task['reward']} Points"
-        )
-        await query.edit_message_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown",
-        )
-        return
-
-    success = complete_task(user.id, task_id)
-
-    if success:
-        text = (
-            "🎉 **TASK COMPLETED!**\n\n"
-            f"🎯 {task['title']}\n"
-            f"💰 Reward: {task['reward']} Points"
-        )
-    else:
-        text = (
-            "⚠️ **TASK NOT COMPLETED**\n\n"
-            "The task may be unavailable or still on cooldown."
-        )
-
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Tasks", callback_data="tasks")],
-            [InlineKeyboardButton("🏠 Home", callback_data="home")],
-        ]),
-        parse_mode="Markdown",
-    )
-
-
-async def task_complete_callback(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    query = update.callback_query
-    if not query:
-        return
-
-    await query.answer()
-
-    data = str(query.data or "")
-    if not data.startswith("task_complete_"):
-        return
-
-    task_id = data[len("task_complete_"):]
-    task = get_task(task_id)
-
-    if not task:
-        await query.edit_message_text("⚠️ Task not found.")
-        return
-
-    success = complete_task(
-        query.from_user.id,
-        task_id,
-    )
-
-    if success:
-        text = (
-            "🎉 **Verified!**\n\n"
-            f"🎯 {task['title']}\n"
-            f"💰 +{task['reward']} Points"
-        )
-    else:
-        text = (
-            "❌ **Verification failed**\n\n"
-            "The task is already completed or unavailable."
-        )
-
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Tasks", callback_data="tasks")],
-            [InlineKeyboardButton("🏠 Home", callback_data="home")],
-        ]),
-        parse_mode="Markdown",
-    )
-
-
-HANDLER_FUNCTIONS = {
-    "tasks": tasks_page,
-    "task_callback": task_callback,
-    "task_complete_callback": task_complete_callback,
-}
-
-__all__ = [
-    "TASKS",
-    "TASK_COOLDOWN",
-    "register_task",
-    "get_tasks",
-    "get_task",
-    "task_available",
-    "complete_task",
-    "tasks_menu",
-    "tasks_page",
-    "task_callback",
-    "task_complete_callback",
-    "HANDLER_FUNCTIONS",
-  ]
-      
+HANDLER_FUNCTIONS={"tasks":tasks_page,"task_callback":task_callback,"task_complete_callback":task_complete_callback}
+__all__=["register_task","get_tasks","get_task","set_task_enabled","delete_task","task_available","complete_task","tasks_menu","tasks_page","task_callback","task_complete_callback","HANDLER_FUNCTIONS","ensure_task_indexes"]

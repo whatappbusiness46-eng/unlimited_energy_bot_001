@@ -4179,6 +4179,44 @@ def add_premium_balance(
 # REMOVE BONUS BALANCE
 # ============================================================
 
+def convert_bonus_to_balance(user_id, amount=None):
+    """Move promotional bonus points into the main balance atomically.
+
+    Bonus points remain non-withdrawable until explicitly converted; the
+    conversion is recorded as an internal transfer and does not increase
+    total_earned a second time.
+    """
+    user_id = int(user_id)
+    user = get_user(user_id, create=False)
+    if not user or user.get("banned", False) or user.get("blacklisted", False):
+        return 0
+    available = int(user.get("bonus_balance", 0) or 0)
+    if available <= 0:
+        return 0
+    if amount is None:
+        amount = available
+    try:
+        amount = int(amount)
+    except (TypeError, ValueError):
+        return 0
+    if amount <= 0 or amount > available:
+        return 0
+    result = users.update_one(
+        {"user_id": user_id, "bonus_balance": {"$gte": amount}},
+        {"$inc": {"bonus_balance": -amount, "balance": amount}},
+    )
+    if result.modified_count != 1:
+        return 0
+    record_transaction(
+        user_id=user_id,
+        transaction_type="bonus_to_balance",
+        amount=amount,
+        source="bonus_conversion",
+    )
+    add_activity(user_id, "🎁 Bonus converted to balance", amount)
+    return amount
+
+
 def remove_bonus(
     user_id,
     amount,

@@ -18,6 +18,14 @@ from provider_integrations import (
     shorten_with_provider,
 )
 
+from payments import pending as pending_payments, get_payment, approve_payment, reject_payment
+from premium import grant_premium, revoke_premium
+from vip import grant_vip, remove_vip, is_valid_vip_level
+
+from tasks import (
+    get_tasks, register_task, set_task_enabled, delete_task,
+)
+
 from shortlinks import (
     get_shortlinks,
     register_shortlink,
@@ -30,6 +38,8 @@ from database import (
     update_user,
     add_balance,
     remove_balance,
+    add_bonus,
+    remove_bonus,
     users,
     db,
     get_withdrawals,
@@ -151,6 +161,13 @@ def admin_menu():
 
         [
             InlineKeyboardButton(
+                "💳 Membership Payments",
+                callback_data="admin_membership_payments",
+            )
+        ],
+
+        [
+            InlineKeyboardButton(
                 "💸 Withdrawals",
                 callback_data="admin_withdrawals",
             )
@@ -210,9 +227,38 @@ def user_info_keyboard(user_id):
                 InlineKeyboardButton(
                     "➖ Remove Balance",
                     callback_data=f"admin_remove_{user_id}",
-                )
+                ),
+                InlineKeyboardButton(
+                    "🎁 Add Bonus",
+                    callback_data=f"admin_bonus_add_{user_id}",
+                ),
             ],
-
+            [
+                InlineKeyboardButton(
+                    "🎁 Remove Bonus",
+                    callback_data=f"admin_bonus_remove_{user_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "👑 Premium ON",
+                    callback_data=f"admin_premium_on_{user_id}",
+                ),
+                InlineKeyboardButton(
+                    "❌ Premium OFF",
+                    callback_data=f"admin_premium_off_{user_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "💎 Set VIP",
+                    callback_data=f"admin_vip_set_{user_id}",
+                ),
+                InlineKeyboardButton(
+                    "🚫 VIP OFF",
+                    callback_data=f"admin_vip_off_{user_id}",
+                ),
+            ],
             [
                 InlineKeyboardButton(
                     "🔒 Ban / Unban",
@@ -624,6 +670,73 @@ async def admin_remove_balance(
 
 
 # ==================================================
+# MEMBERSHIP / BONUS USER CONTROLS
+# ==================================================
+
+async def _admin_target_action(update, context, action, target_id):
+    q = update.callback_query
+    if not q or not admin_only(q.from_user.id):
+        if q:
+            await q.answer("🚫 Admin only.", show_alert=True)
+        return
+    target_id = int(target_id)
+    user = get_user(target_id, create=False)
+    if not user:
+        await q.answer("❌ User not found.", show_alert=True)
+        return
+    if action == "premium_on":
+        ok = grant_premium(target_id, 30)
+        msg = "👑 Premium ON for 30 days." if ok else "❌ Could not activate Premium."
+    elif action == "premium_off":
+        ok = revoke_premium(target_id)
+        msg = "❌ Premium removed." if ok else "❌ Could not remove Premium."
+    elif action == "vip_off":
+        ok = remove_vip(target_id)
+        msg = "🚫 VIP removed." if ok else "❌ Could not remove VIP."
+    else:
+        return
+    await q.answer(msg, show_alert=True)
+    await admin_view_user(update, context, target_id)
+
+
+async def admin_premium_on(update, context):
+    await _admin_target_action(update, context, "premium_on", update.callback_query.data.replace("admin_premium_on_", "", 1))
+
+async def admin_premium_off(update, context):
+    await _admin_target_action(update, context, "premium_off", update.callback_query.data.replace("admin_premium_off_", "", 1))
+
+async def admin_vip_off(update, context):
+    await _admin_target_action(update, context, "vip_off", update.callback_query.data.replace("admin_vip_off_", "", 1))
+
+async def admin_bonus_add(update, context):
+    q=update.callback_query
+    if not q or not admin_only(q.from_user.id): return
+    await q.answer()
+    target=int(q.data.replace("admin_bonus_add_", "", 1))
+    context.user_data["admin_action"]="add_bonus"
+    context.user_data["admin_target"]=target
+    await q.edit_message_text(f"🎁 **ADD BONUS**\n\nUser ID: `{target}`\n\nSend bonus points to add.", reply_markup=admin_back(), parse_mode="Markdown")
+
+async def admin_bonus_remove(update, context):
+    q=update.callback_query
+    if not q or not admin_only(q.from_user.id): return
+    await q.answer()
+    target=int(q.data.replace("admin_bonus_remove_", "", 1))
+    context.user_data["admin_action"]="remove_bonus"
+    context.user_data["admin_target"]=target
+    await q.edit_message_text(f"🎁 **REMOVE BONUS**\n\nUser ID: `{target}`\n\nSend bonus points to remove.", reply_markup=admin_back(), parse_mode="Markdown")
+
+async def admin_vip_set(update, context):
+    q=update.callback_query
+    if not q or not admin_only(q.from_user.id): return
+    await q.answer()
+    target=int(q.data.replace("admin_vip_set_", "", 1))
+    context.user_data["admin_action"]="set_vip"
+    context.user_data["admin_target"]=target
+    await q.edit_message_text(f"💎 **SET VIP**\n\nUser ID: `{target}`\n\nSend VIP level `1` to `5`.", reply_markup=admin_back(), parse_mode="Markdown")
+
+
+# ==================================================
 # BAN MENU
 # ==================================================
 
@@ -837,6 +950,49 @@ async def admin_shortlink_delete(update, context):
         await query.answer("Shortlink not found.", show_alert=True)
     await admin_shortlinks(update, context)
 
+
+# ==================================================
+# MEMBERSHIP CASH PAYMENT MANAGEMENT
+# ==================================================
+async def admin_membership_payments(update, context):
+    q=update.callback_query
+    if not q or not admin_only(q.from_user.id): return
+    await q.answer(); items=pending_payments(30)
+    buttons=[]
+    for p in items:
+        label=f"{p['payment_id']} | {p['product']} | ৳{p['price']:g}"
+        buttons.append([InlineKeyboardButton(label, callback_data=f"admin_payment_view_{p['payment_id']}")])
+    buttons.append([InlineKeyboardButton("🔙 Admin Panel",callback_data="admin")])
+    await q.edit_message_text("💳 **MEMBERSHIP PAYMENTS**\n\n"+ (f"Pending: {len(items)}" if items else "No pending payments."), reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+
+async def admin_payment_view(update, context):
+    q=update.callback_query
+    if not q or not admin_only(q.from_user.id): return
+    await q.answer(); pid=str(q.data).replace("admin_payment_view_", "", 1); p=get_payment(pid)
+    if not p: await q.edit_message_text("⚠️ Payment not found.",reply_markup=admin_back()); return
+    ref=p.get("reference","(not submitted)")
+    buttons=[]
+    if p.get("status")=="pending" and ref!="(not submitted)":
+        buttons.append([InlineKeyboardButton("✅ Approve",callback_data=f"admin_payment_approve_{pid}")])
+        buttons.append([InlineKeyboardButton("❌ Reject",callback_data=f"admin_payment_reject_{pid}")])
+    buttons.append([InlineKeyboardButton("🔙 Payments",callback_data="admin_membership_payments")])
+    await q.edit_message_text(f"💳 **PAYMENT REVIEW**\n\n🆔 `{pid}`\n👤 User: `{p.get('user_id')}`\n📦 Product: `{p.get('product')}`\n💰 Amount: ৳{float(p.get('price',0)):g}\n📱 Method: `{p.get('method')}`\n🧾 Reference: `{ref}`\n📌 Status: `{p.get('status')}`",reply_markup=InlineKeyboardMarkup(buttons),parse_mode="Markdown")
+
+async def admin_payment_approve(update, context):
+    q=update.callback_query
+    if not q or not admin_only(q.from_user.id): return
+    pid=str(q.data).replace("admin_payment_approve_", "", 1); ok,msg=approve_payment(pid,q.from_user.id); await q.answer(msg,show_alert=not ok)
+    p=get_payment(pid)
+    if ok:
+        try: await context.bot.send_message(int(p['user_id']),f"✅ **Payment approved!**\n\n💳 {p['product']} is now active for 30 days.",parse_mode="Markdown")
+        except Exception: pass
+    await admin_membership_payments(update,context)
+
+async def admin_payment_reject(update, context):
+    q=update.callback_query
+    if not q or not admin_only(q.from_user.id): return
+    pid=str(q.data).replace("admin_payment_reject_", "", 1); context.user_data["admin_action"]="payment_reject_reason"; context.user_data["payment_id"]=pid
+    await q.answer(); await q.edit_message_text("❌ Send rejection reason:",reply_markup=admin_back())
 
 # ==================================================
 # WITHDRAWAL MANAGEMENT
@@ -1405,109 +1561,54 @@ async def admin_set_group(
 # TASK SETTINGS
 # ==================================================
 
-async def admin_tasks(
-    update,
-    context,
-):
-
+async def admin_tasks(update, context):
     query = update.callback_query
-
+    if not query or not admin_only(query.from_user.id):
+        if query: await query.answer("🚫 Admin only.", show_alert=True)
+        return
     await query.answer()
-
-    settings = (
-        db["bot_settings"].find_one(
-            {"_id": "main"}
-        )
-        or {}
-    )
-
-    reward = settings.get(
-        "task_reward",
-        10,
-    )
-
-    daily_limit = settings.get(
-        "daily_task_limit",
-        20,
-    )
-
+    items = get_tasks(include_disabled=True)
+    buttons = [[InlineKeyboardButton("➕ Add Task", callback_data="admin_add_task")]]
+    for t in items[:30]:
+        status = "🟢" if t.get("enabled", True) else "🔴"
+        tid = str(t.get("id"))
+        buttons.append([InlineKeyboardButton(f"{status} {t.get('title', tid)} | +{t.get('reward',0)}", callback_data=f"admin_task_toggle_{tid}")])
+        buttons.append([InlineKeyboardButton(f"🗑 Delete {tid}", callback_data=f"admin_task_delete_{tid}")])
+    buttons.append([InlineKeyboardButton("🔙 Admin Panel", callback_data="admin")])
     await query.edit_message_text(
+        "🎯 **TASK MANAGEMENT**\n\n"
+        f"Configured: {len(items)}\n\n"
+        "Add format:\n`id|title|description|url|reward|cooldown|xp|energy`\n\n"
+        "Example:\n`task1|Join Channel|Join our channel|https://t.me/example|50|86400|5|1`\n\n"
+        "🟢 visible/active · 🔴 disabled",
+        reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
 
-        "🎯 **TASK SETTINGS**\n\n"
-
-        f"💰 Test Task Reward: {reward}\n"
-        f"📊 Daily Limit: {daily_limit}\n\n"
-
-        "Task configuration is stored "
-        "in MongoDB.",
-
-        reply_markup=InlineKeyboardMarkup(
-            [
-
-                [
-                    InlineKeyboardButton(
-                        "💰 Change Reward",
-                        callback_data="admin_set_task_reward",
-                    )
-                ],
-
-                [
-                    InlineKeyboardButton(
-                        "📊 Change Daily Limit",
-                        callback_data="admin_set_task_limit",
-                    )
-                ],
-
-                [
-                    InlineKeyboardButton(
-                        "🔙 Admin Panel",
-                        callback_data="admin",
-                    )
-                ],
-
-            ]
-        ),
-
-        parse_mode="Markdown",
-    )
-
-
-async def admin_set_task_reward(
-    update,
-    context,
-):
-
-    query = update.callback_query
-
-    await query.answer()
-
-    context.user_data["admin_action"] = (
-        "set_task_reward"
-    )
-
+async def admin_add_task(update, context):
+    query=update.callback_query
+    if not query or not admin_only(query.from_user.id):
+        if query: await query.answer("🚫 Admin only.", show_alert=True)
+        return
+    await query.answer(); context.user_data["admin_action"]="add_task"
     await query.edit_message_text(
-        "🎯 Send new Task Reward:",
-        reply_markup=admin_back(),
-    )
+        "🎯 **ADD TASK**\n\nSend one line:\n`id|title|description|url|reward|cooldown|xp|energy`\n\n"
+        "Use `-` for no URL/description. Example:\n`task1|Join Channel|Join our channel|https://t.me/example|50|86400|5|1`",
+        reply_markup=admin_back(), parse_mode="Markdown")
 
+async def admin_task_toggle(update, context):
+    q=update.callback_query
+    if not q or not admin_only(q.from_user.id): return
+    tid=str(q.data).replace("admin_task_toggle_", "", 1); task=next((x for x in get_tasks(True) if str(x.get("id"))==tid),None)
+    if not task: await q.answer("Task not found.", show_alert=True); return
+    new=not bool(task.get("enabled",True)); set_task_enabled(tid,new); await q.answer("🟢 Enabled" if new else "🔴 Disabled"); await admin_tasks(update,context)
 
-async def admin_set_task_limit(
-    update,
-    context,
-):
+async def admin_task_delete(update, context):
+    q=update.callback_query
+    if not q or not admin_only(q.from_user.id): return
+    tid=str(q.data).replace("admin_task_delete_", "", 1)
+    if delete_task(tid): await q.answer("🗑 Deleted")
+    else: await q.answer("Task not found.", show_alert=True)
+    await admin_tasks(update,context)
 
-    query = update.callback_query
-
-    await query.answer()
-
-    context.user_data["admin_action"] = (
-        "set_task_limit"
-    )
-
-    await query.edit_message_text(
-        "🎯 Send new Daily Task Limit:",
-        reply_markup=admin_back(),
-    )
 
 # ==================================================
 # WHEEL SETTINGS
@@ -2162,6 +2263,37 @@ async def admin_text_handler(
         return True
 
     # ==================================================
+    # BONUS / VIP ADMIN ACTIONS
+    # ==================================================
+    if action in ("add_bonus", "remove_bonus", "set_vip"):
+        target_id = int(context.user_data.get("admin_target", 0) or 0)
+        if not get_user(target_id, create=False):
+            context.user_data.clear()
+            await update.message.reply_text("❌ User not found.", reply_markup=admin_back())
+            return True
+        try:
+            value = int(text)
+        except ValueError:
+            await update.message.reply_text("❌ Send a valid whole number.")
+            return True
+        if action == "add_bonus":
+            ok = add_bonus(target_id, value)
+            message = "🎁 Bonus added." if ok else "❌ Could not add bonus."
+        elif action == "remove_bonus":
+            removed = remove_bonus(target_id, value)
+            ok = removed == value
+            message = f"🎁 Removed {removed} bonus points." if ok else "❌ Could not remove that amount."
+        else:
+            if value not in (1,2,3,4,5):
+                await update.message.reply_text("❌ VIP level must be 1–5.")
+                return True
+            ok = grant_vip(target_id, value, 30)
+            message = f"💎 VIP {value} activated for 30 days." if ok else "❌ Could not activate VIP."
+        context.user_data.clear()
+        await update.message.reply_text(message, reply_markup=admin_back())
+        return True
+
+    # ==================================================
     # WITHDRAWAL REJECTION REASON
     # ==================================================
 
@@ -2455,6 +2587,40 @@ async def admin_text_handler(
         # ==================================================
     # SPECIFIC BROADCAST MESSAGE
     # ==================================================
+
+    if action == "payment_reference":
+        pid=context.user_data.get("payment_reference_id")
+        ok=submit_reference(pid,text) if pid else False
+        context.user_data.clear()
+        await update.message.reply_text("✅ Transaction ID submitted. Admin will verify your payment." if ok else "❌ Could not submit. Please start payment again.", reply_markup=admin_back() if admin_only(user_id) else None)
+        if ok:
+            p=get_payment(pid)
+            try: await context.bot.send_message(int(ADMIN_ID),f"💳 New membership payment\nID: {pid}\nUser: {p.get('user_id')}\nProduct: {p.get('product')}\nAmount: ৳{float(p.get('price',0)):g}\nMethod: {p.get('method')}\nReference: {text}")
+            except Exception: pass
+        return True
+
+    if action == "payment_reject_reason":
+        pid=context.user_data.get("payment_id"); reason=text or "Rejected"; p=get_payment(pid) if pid else None
+        ok=reject_payment(pid,reason) if pid else False; context.user_data.clear()
+        if ok and p:
+            try: await context.bot.send_message(int(p['user_id']),f"❌ **Payment rejected**\n\nReason: {reason}",parse_mode="Markdown")
+            except Exception: pass
+        await update.message.reply_text("✅ Payment rejected." if ok else "❌ Payment was already processed.",reply_markup=admin_back())
+        return True
+
+    if action == "add_task":
+        parts=[x.strip() for x in text.split("|")]
+        if len(parts) != 8:
+            await update.message.reply_text("❌ Format: id|title|description|url|reward|cooldown|xp|energy", reply_markup=admin_back()); return True
+        tid,title,desc,url,reward,cd,xp,energy=parts
+        if desc == "-": desc=""
+        if url == "-": url=None
+        try:
+            ok=register_task(tid,title,desc,int(reward),url,int(cd),True,int(xp),int(energy))
+        except ValueError: ok=False
+        context.user_data.clear()
+        await update.message.reply_text("✅ Task added/updated." if ok else "❌ Invalid task values.", reply_markup=admin_back())
+        return True
 
     if action == "add_shortlink":
         parts = [part.strip() for part in (update.message.text or "").split("|")]
@@ -2847,6 +3013,8 @@ async def admin_callback(
         "admin_stats": admin_statistics,
         "admin_rewards": admin_rewards,
         "admin_tasks": admin_tasks,
+        "admin_membership_payments": admin_membership_payments,
+        "admin_add_task": admin_add_task,
         "admin_wheel": admin_wheel,
         "admin_lucky": admin_lucky,
         "admin_referral": admin_referral,
@@ -2872,7 +3040,21 @@ async def admin_callback(
         "admin_cpagrip_refresh": admin_cpagrip_refresh,
         "admin_withdrawals": admin_withdrawals,
         "admin_vip_toggle": admin_vip_toggle,
+        "admin_premium_on": admin_premium_on,
     }
+
+    if data.startswith("admin_payment_view_"):
+        await admin_payment_view(update, context); return
+    if data.startswith("admin_payment_approve_"):
+        await admin_payment_approve(update, context); return
+    if data.startswith("admin_payment_reject_"):
+        await admin_payment_reject(update, context); return
+    if data.startswith("admin_task_toggle_"):
+        await admin_task_toggle(update, context)
+        return
+    if data.startswith("admin_task_delete_"):
+        await admin_task_delete(update, context)
+        return
 
     handler = routes.get(data)
     if handler:
@@ -2927,6 +3109,19 @@ async def admin_callback(
     if data.startswith("admin_withdraw_reject_"):
         await admin_withdrawal_reject(update, context)
         return
+
+    if data.startswith("admin_premium_on_"):
+        await admin_premium_on(update, context); return
+    if data.startswith("admin_premium_off_"):
+        await admin_premium_off(update, context); return
+    if data.startswith("admin_vip_set_"):
+        await admin_vip_set(update, context); return
+    if data.startswith("admin_vip_off_"):
+        await admin_vip_off(update, context); return
+    if data.startswith("admin_bonus_add_"):
+        await admin_bonus_add(update, context); return
+    if data.startswith("admin_bonus_remove_"):
+        await admin_bonus_remove(update, context); return
 
     prefixed_handlers = (
         ("admin_add_", admin_add_balance),

@@ -14,6 +14,7 @@ from telegram.ext import ContextTypes
 from config import (
     PREMIUM_PRICE,
     PREMIUM_DAYS,
+    PREMIUM_CASH_PRICE,
 )
 
 from database import (
@@ -560,14 +561,15 @@ async def premium_page(
     else:
         text = (
             "👑 **PREMIUM MEMBERSHIP**\n\n"
-            f"💰 Price: "
-            f"{status['price']} Points\n"
+            f"💰 Price: ৳{PREMIUM_CASH_PRICE:g}\n"
             f"⏳ Duration: "
             f"{status['days']} days\n\n"
             "✨ Premium benefits:\n"
-            "• Extra reward multiplier\n"
-            "• Premium features\n"
-            "• Special rewards\n\n"
+            "• 1.10x earning multiplier\n"
+            "• Premium status for 30 days\n"
+            "• Premium-only reward opportunities\n"
+            "• Priority membership features\n\n"
+            "💳 Payment: bKash / Nagad / Bybit\n"
             "👇 Choose an option:"
         )
 

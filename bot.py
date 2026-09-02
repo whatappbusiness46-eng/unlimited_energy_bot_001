@@ -47,6 +47,8 @@ from admin import (
     admin_text_handler,
 )
 
+from payments import payment_text_handler
+
 from withdraw import (
     withdraw_text_handler,
 )
@@ -260,6 +262,12 @@ async def text_message_router(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+
+    # --------------------------------------------------------
+    # MEMBERSHIP PAYMENT REFERENCE FLOW
+    # --------------------------------------------------------
+    if await payment_text_handler(update, context):
+        return
 
     # --------------------------------------------------------
     # WITHDRAWAL FLOW FIRST

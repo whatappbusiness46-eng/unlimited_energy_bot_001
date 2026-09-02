@@ -106,6 +106,15 @@ BYBIT_UID = os.getenv(
     "YOUR_BYBIT_UID",
 )
 
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "")
+
+PREMIUM_CASH_PRICE = float(os.getenv("PREMIUM_CASH_PRICE", "199"))
+VIP1_CASH_PRICE = float(os.getenv("VIP1_CASH_PRICE", "299"))
+VIP2_CASH_PRICE = float(os.getenv("VIP2_CASH_PRICE", "499"))
+VIP3_CASH_PRICE = float(os.getenv("VIP3_CASH_PRICE", "799"))
+VIP4_CASH_PRICE = float(os.getenv("VIP4_CASH_PRICE", "1199"))
+VIP5_CASH_PRICE = float(os.getenv("VIP5_CASH_PRICE", "1799"))
+
 
 # ============================================================
 # WITHDRAW STATUS
