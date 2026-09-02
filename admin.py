@@ -1610,6 +1610,26 @@ async def admin_task_delete(update, context):
     await admin_tasks(update,context)
 
 
+async def admin_set_task_reward(update, context):
+    query = update.callback_query
+    if not query or not admin_only(query.from_user.id):
+        if query: await query.answer("🚫 Admin only.", show_alert=True)
+        return
+    await query.answer()
+    context.user_data["admin_action"] = "set_task_reward"
+    await query.edit_message_text("🎯 Send new default Task Reward (points):", reply_markup=admin_back())
+
+
+async def admin_set_task_limit(update, context):
+    query = update.callback_query
+    if not query or not admin_only(query.from_user.id):
+        if query: await query.answer("🚫 Admin only.", show_alert=True)
+        return
+    await query.answer()
+    context.user_data["admin_action"] = "set_task_limit"
+    await query.edit_message_text("🎯 Send new Daily Task Limit:", reply_markup=admin_back())
+
+
 # ==================================================
 # WHEEL SETTINGS
 # ==================================================
