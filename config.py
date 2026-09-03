@@ -109,6 +109,7 @@ BYBIT_UID = os.getenv(
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "")
 
 PREMIUM_CASH_PRICE = float(os.getenv("PREMIUM_CASH_PRICE", "199"))
+PREMIUM_MULTIPLIER = float(os.getenv("PREMIUM_MULTIPLIER", "2.0"))
 VIP1_CASH_PRICE = float(os.getenv("VIP1_CASH_PRICE", "299"))
 VIP2_CASH_PRICE = float(os.getenv("VIP2_CASH_PRICE", "499"))
 VIP3_CASH_PRICE = float(os.getenv("VIP3_CASH_PRICE", "799"))

@@ -6,7 +6,7 @@ import time
 from typing import Any, Dict, Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from database import db, get_user, update_user, add_balance, add_activity
+from database import db, get_user, update_user, add_balance, add_activity, get_membership_multiplier
 
 logger = logging.getLogger(__name__)
 tasks_collection = db["tasks"]
@@ -124,6 +124,10 @@ def complete_task(user_id, task_id):
         from database import use_energy
         if not use_energy(user_id, energy_cost): return False, "Not enough Energy."
     reward = max(0, _safe_int(task.get("reward"), 0)); xp = max(0, _safe_int(task.get("xp"), 0))
+    try:
+        reward = int(round(reward * max(1.0, float(get_membership_multiplier(user_id)))))
+    except Exception:
+        pass
     history = _completed_map(user); history[str(task_id)] = _now()
     update_user(user_id, {"task_history": history, "daily_task_count": count + 1, "task_day_started": reset})
     if reward: add_balance(user_id, reward)

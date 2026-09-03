@@ -8,7 +8,7 @@ from pymongo.errors import DuplicateKeyError
 logger = logging.getLogger(__name__)
 DEFAULT_REWARD = 10
 DEFAULT_XP = 10
-DEFAULT_MILESTONES = {5: 100, 10: 250, 25: 700, 50: 1500, 100: 3500}
+DEFAULT_MILESTONES = {5: 50, 10: 100, 25: 250, 100: 1000}
 referral_claims = db["referral_claims"]
 referral_milestone_claims = db["referral_milestone_claims"]
 try:
@@ -75,8 +75,17 @@ async def referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
     earned = _safe_int(db_user.get("referral_earn", 0))
     pending = _safe_int(db_user.get("pending_referrals", 0))
     link = _referral_link(context, user.id) or "⚠️ Referral link unavailable."
+    ms = get_milestones()
+    next_ms = next(((n, reward) for n, reward in ms.items() if n > referrals), None)
+    milestone_lines = [f"• {n} referrals → +{reward} Points" for n, reward in ms.items()]
+    next_line = (f"🎯 Next: {next_ms[0]} referrals → +{next_ms[1]} Points ({referrals}/{next_ms[0]})"
+                 if next_ms else "🎯 All configured milestones reached.")
     await update.effective_message.reply_text(
-        f"👥 **REFERRAL PROGRAM**\n\n🔗 Your link:\n`{link}`\n\n👥 Valid Referrals: {referrals}\n⏳ Pending Referrals: {pending}\n💰 Referral Earnings: {earned} Points\n\n🎁 Reward is released after the referred user completes a qualifying activity.\n🏆 Milestones are configured by Admin.",
+        f"👥 **REFERRAL CENTER**\n\n🎁 Invite friends and earn rewards!\n\n"
+        f"👥 Valid Referrals: {referrals}\n⏳ Pending Referrals: {pending}\n"
+        f"💰 Referral Earnings: {earned} Points\n\n🏆 **REFERRAL MILESTONES**\n"
+        f"{chr(10).join(milestone_lines) if milestone_lines else 'No milestones configured.'}\n\n"
+        f"{next_line}\n\n🎁 Referral rewards are released after the referred user completes a qualifying activity.",
         reply_markup=referral_menu(), parse_mode="Markdown")
 
 async def referral_link_callback(update, context):
