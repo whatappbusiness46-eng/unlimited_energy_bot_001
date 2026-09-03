@@ -25,6 +25,7 @@ from vip import grant_vip, remove_vip, is_valid_vip_level
 from tasks import (
     get_tasks, register_task, set_task_enabled, delete_task,
 )
+from referral import get_milestones, set_milestone, delete_milestone
 
 from shortlinks import (
     get_shortlinks,
@@ -1931,7 +1932,9 @@ async def admin_referral(
                         callback_data="admin_set_ref_xp",
                     )
                 ],
-
+                [
+                    InlineKeyboardButton("🏆 Milestones", callback_data="admin_ref_milestones"),
+                ],
                 [
                     InlineKeyboardButton(
                         "🔙 Admin Panel",
@@ -1945,6 +1948,21 @@ async def admin_referral(
         parse_mode="Markdown",
     )
 
+
+async def admin_ref_milestones(update, context):
+    q=update.callback_query; await q.answer()
+    ms=get_milestones()
+    lines=["🏆 **REFERRAL MILESTONES**", "", "Format: `count|reward`", "Send `0|0` to delete a milestone.", ""]
+    lines += [f"{n} referrals → {r} Points" for n,r in ms.items()] or ["No milestones configured."]
+    await q.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add/Edit",callback_data="admin_add_ref_milestone")],[InlineKeyboardButton("🗑 Delete",callback_data="admin_del_ref_milestone")],[InlineKeyboardButton("🔙 Referral Settings",callback_data="admin_referral")]]), parse_mode="Markdown")
+
+async def admin_add_ref_milestone(update, context):
+    q=update.callback_query; await q.answer(); context.user_data["admin_action"]="add_ref_milestone"
+    await q.edit_message_text("🏆 Send milestone as `referral_count|reward_points`\nExample: `25|700`",reply_markup=admin_back(),parse_mode="Markdown")
+
+async def admin_del_ref_milestone(update, context):
+    q=update.callback_query; await q.answer(); context.user_data["admin_action"]="del_ref_milestone"
+    await q.edit_message_text("🗑 Send the referral milestone count to delete. Example: `25`",reply_markup=admin_back())
 
 async def admin_set_ref_reward(
     update,
@@ -2638,6 +2656,17 @@ async def admin_text_handler(
         await update.message.reply_text("✅ Payment rejected." if ok else "❌ Payment was already processed.",reply_markup=admin_back())
         return True
 
+    if action == "add_ref_milestone":
+        parts=[x.strip() for x in text.split("|",1)]
+        try: ok=len(parts)==2 and set_milestone(int(parts[0]), int(parts[1]))
+        except ValueError: ok=False
+        context.user_data.clear(); await update.message.reply_text("✅ Milestone saved." if ok else "❌ Invalid format. Use count|reward", reply_markup=admin_back()); return True
+
+    if action == "del_ref_milestone":
+        try: ok=delete_milestone(int(text.strip()))
+        except ValueError: ok=False
+        context.user_data.clear(); await update.message.reply_text("✅ Milestone deleted." if ok else "❌ Milestone not found.", reply_markup=admin_back()); return True
+
     if action == "add_task":
         parts=[x.strip() for x in text.split("|")]
         if len(parts) != 8:
@@ -3047,6 +3076,9 @@ async def admin_callback(
         "admin_wheel": admin_wheel,
         "admin_lucky": admin_lucky,
         "admin_referral": admin_referral,
+        "admin_ref_milestones": admin_ref_milestones,
+        "admin_add_ref_milestone": admin_add_ref_milestone,
+        "admin_del_ref_milestone": admin_del_ref_milestone,
         "admin_settings": admin_settings,
         "admin_broadcast": admin_broadcast,
         "admin_bc_all": admin_bc_all,

@@ -130,6 +130,11 @@ def complete_task(user_id, task_id):
     if xp:
         from database import add_xp
         add_xp(user_id, xp)
+    try:
+        from referral import activate_referral
+        activate_referral(user_id, "task")
+    except Exception:
+        logger.exception("Referral activation hook failed")
     try: add_activity(user_id, f"Task completed: {task.get('title')}", reward)
     except Exception: pass
     return True, "OK"

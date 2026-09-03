@@ -1037,7 +1037,7 @@ async def earn_callback(
     earn_handlers = {
         "earn": earn_page,
         "daily_bonus": daily_bonus,
-        "tasks": tasks,
+        "tasks": task_menu_page,
         "shortlinks": shortlinks_page,
         "spin": spin_wheel,
         "spin_wheel": spin_wheel,

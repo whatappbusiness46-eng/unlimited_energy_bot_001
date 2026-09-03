@@ -1,686 +1,156 @@
 import logging
-
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
-
+import time
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-
-from config import REFERRAL_REWARD
-
-from database import (
-    get_user,
-    update_user,
-    add_balance,
-    add_activity,
-)
-
+from database import get_user, update_user, add_balance, add_activity, db
+from pymongo.errors import DuplicateKeyError
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================
-# HELPERS
-# ============================================================
+DEFAULT_REWARD = 10
+DEFAULT_XP = 10
+DEFAULT_MILESTONES = {5: 100, 10: 250, 25: 700, 50: 1500, 100: 3500}
+referral_claims = db["referral_claims"]
+referral_milestone_claims = db["referral_milestone_claims"]
+try:
+    referral_claims.create_index("new_user_id", unique=True, name="referral_new_user_unique")
+    referral_milestone_claims.create_index([("user_id", 1), ("milestone", 1)], unique=True, name="referral_milestone_unique")
+except Exception:
+    logger.exception("Referral index setup warning")
 
 def _safe_int(value, default=0):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
+    try: return int(value)
+    except (TypeError, ValueError): return default
 
 def _get_user(user_id):
-    try:
-        return get_user(
-            user_id,
-            create=False,
-        )
-    except TypeError:
-        return get_user(user_id)
+    try: return get_user(user_id, create=False)
+    except TypeError: return get_user(user_id)
 
+def _settings():
+    return db["bot_settings"].find_one({"_id": "main"}) or {}
+
+def _referral_reward():
+    return max(0, _safe_int(_settings().get("referral_reward", DEFAULT_REWARD)))
+
+def _referral_xp():
+    return max(0, _safe_int(_settings().get("referral_xp", DEFAULT_XP)))
+
+def get_milestones():
+    raw = _settings().get("referral_milestones", DEFAULT_MILESTONES)
+    if not isinstance(raw, dict): raw = DEFAULT_MILESTONES
+    out = {}
+    for k, v in raw.items():
+        n, r = _safe_int(k), _safe_int(v)
+        if n > 0 and r >= 0: out[n] = r
+    return dict(sorted(out.items()))
+
+def set_milestone(count, reward):
+    count, reward = _safe_int(count), _safe_int(reward)
+    if count <= 0 or reward < 0: return False
+    settings = _settings(); milestones = get_milestones(); milestones[count] = reward
+    return db["bot_settings"].update_one({"_id":"main"},{"$set":{"referral_milestones":{str(k):v for k,v in milestones.items()}}},upsert=True).acknowledged
+
+def delete_milestone(count):
+    count = _safe_int(count)
+    milestones = get_milestones()
+    if count not in milestones: return False
+    milestones.pop(count)
+    return db["bot_settings"].update_one({"_id":"main"},{"$set":{"referral_milestones":{str(k):v for k,v in milestones.items()}}},upsert=True).acknowledged
 
 def _get_bot_username(context):
-    username = getattr(
-        context.bot,
-        "username",
-        None,
-    )
-
-    if username:
-        return str(username).lstrip("@")
-
-    try:
-        me = context.bot.get_me
-        if callable(me):
-            # Do not make a synchronous network call here.
-            # The username should normally already be available.
-            pass
-    except Exception:
-        pass
-
-    return None
-
+    return getattr(context.bot, "username", None) or None
 
 def _referral_link(context, user_id):
     username = _get_bot_username(context)
-
-    if not username:
-        return None
-
-    return (
-        f"https://t.me/{username}"
-        f"?start=ref_{user_id}"
-    )
-
-
-def _home_keyboard():
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "🏠 Home",
-                    callback_data="home",
-                )
-            ]
-        ]
-    )
-
-
-# ============================================================
-# REFERRAL MENU
-# ============================================================
+    return f"https://t.me/{str(username).lstrip('@')}?start=ref_{user_id}" if username else None
 
 def referral_menu():
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "🔗 Get Referral Link",
-                callback_data="referral_link",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "📊 My Referrals",
-                callback_data="referral_stats",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "🏠 Home",
-                callback_data="home",
-            )
-        ],
-    ]
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🔗 Get Referral Link", callback_data="referral_link")], [InlineKeyboardButton("📊 My Referrals", callback_data="referral_stats")], [InlineKeyboardButton("🏠 Home", callback_data="home")]])
 
-    return InlineKeyboardMarkup(
-        keyboard
-    )
-
-
-# ============================================================
-# REFERRAL PAGE
-# ============================================================
-
-async def referral(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-
-    if not user:
-        return
-
-    user_id = user.id
-    db_user = _get_user(user_id)
-
-    if not db_user:
-        message = update.effective_message
-
-        if message:
-            await message.reply_text(
-                "⚠️ User account not found.",
-                reply_markup=_home_keyboard(),
-            )
-
-        return
-
-    if (
-        db_user.get("banned", False)
-        or db_user.get("blacklisted", False)
-    ):
-        message = update.effective_message
-
-        if message:
-            await message.reply_text(
-                "🚫 Your account is restricted.",
-                reply_markup=_home_keyboard(),
-            )
-
-        return
-
-    referrals = _safe_int(
-        db_user.get("referrals", 0),
-        0,
-    )
-
-    referral_earn = _safe_int(
-        db_user.get("referral_earn", 0),
-        0,
-    )
-
-    referral_link = _referral_link(
-        context,
-        user_id,
-    )
-
-    if referral_link:
-        link_text = referral_link
-    else:
-        link_text = (
-            "⚠️ Referral link is temporarily "
-            "unavailable."
-        )
-
-    message = update.effective_message
-
-    if not message:
-        return
-
-    await message.reply_text(
-        "👥 **REFERRAL PROGRAM**\n\n"
-        "🎁 Invite your friends and earn rewards!\n\n"
-        f"💰 Reward per referral: "
-        f"{REFERRAL_REWARD} Points\n\n"
-        f"👥 Total Referrals: {referrals}\n"
-        f"💵 Referral Earnings: "
-        f"{referral_earn} Points\n\n"
-        "🔗 Your Referral Link:\n"
-        f"{link_text}\n\n"
-        "📢 Share your link with your friends!",
-        reply_markup=referral_menu(),
-        parse_mode="Markdown",
-    )
-
-
-# ============================================================
-# REFERRAL LINK CALLBACK
-# ============================================================
-
-async def referral_link_callback(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    query = update.callback_query
-
-    if not query:
-        return
-
-    await query.answer()
-
-    user = query.from_user
-
-    if not user:
-        return
-
-    user_id = user.id
-    db_user = _get_user(user_id)
-
-    if not db_user:
-        await query.edit_message_text(
-            "⚠️ User account not found.",
-            reply_markup=_home_keyboard(),
-        )
-        return
-
-    if (
-        db_user.get("banned", False)
-        or db_user.get("blacklisted", False)
-    ):
-        await query.edit_message_text(
-            "🚫 Your account is restricted.",
-            reply_markup=_home_keyboard(),
-        )
-        return
-
-    referral_link = _referral_link(
-        context,
-        user_id,
-    )
-
-    if not referral_link:
-        await query.edit_message_text(
-            "⚠️ Unable to generate your referral "
-            "link right now.",
-            reply_markup=referral_menu(),
-        )
-        return
-
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "📊 Referral Stats",
-                callback_data="referral_stats",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "👥 Referral Menu",
-                callback_data="refer",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "🏠 Home",
-                callback_data="home",
-            )
-        ],
-    ]
-
-    await query.edit_message_text(
-        "🔗 **YOUR REFERRAL LINK**\n\n"
-        f"`{referral_link}`\n\n"
-        f"🎁 You earn "
-        f"{REFERRAL_REWARD} Points "
-        "for every valid referral.\n\n"
-        "📢 Share this link with your friends!",
-        reply_markup=InlineKeyboardMarkup(
-            keyboard
-        ),
-        parse_mode="Markdown",
-    )
-
-
-# ============================================================
-# REFERRAL STATISTICS
-# ============================================================
-
-async def referral_stats_callback(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    query = update.callback_query
-
-    if not query:
-        return
-
-    await query.answer()
-
-    user = query.from_user
-
-    if not user:
-        return
-
-    user_id = user.id
-    db_user = _get_user(user_id)
-
-    if not db_user:
-        await query.edit_message_text(
-            "⚠️ User account not found.",
-            reply_markup=_home_keyboard(),
-        )
-        return
-
-    if (
-        db_user.get("banned", False)
-        or db_user.get("blacklisted", False)
-    ):
-        await query.edit_message_text(
-            "🚫 Your account is restricted.",
-            reply_markup=_home_keyboard(),
-        )
-        return
-
-    referrals = _safe_int(
-        db_user.get("referrals", 0),
-        0,
-    )
-
-    referral_earn = _safe_int(
-        db_user.get("referral_earn", 0),
-        0,
-    )
-
-    referred_by = db_user.get(
-        "referred_by",
-        None,
-    )
-
-    if referred_by:
-        referred_text = (
-            f"👤 Referred By: {referred_by}"
-        )
-    else:
-        referred_text = (
-            "👤 Referred By: None"
-        )
-
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "🔗 Referral Link",
-                callback_data="referral_link",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "👥 Referral Menu",
-                callback_data="refer",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "🏠 Home",
-                callback_data="home",
-            )
-        ],
-    ]
-
-    await query.edit_message_text(
-        "📊 **REFERRAL STATISTICS**\n\n"
-        f"👥 Total Referrals: {referrals}\n"
-        f"💰 Referral Earnings: "
-        f"{referral_earn} Points\n\n"
-        f"{referred_text}\n\n"
-        f"🎁 Reward per referral: "
-        f"{REFERRAL_REWARD} Points",
-        reply_markup=InlineKeyboardMarkup(
-            keyboard
-        ),
-        parse_mode="Markdown",
-    )
-
-
-# ============================================================
-# PROCESS REFERRAL
-# ============================================================
-
-def process_referral(
-    new_user_id,
-    referral_id,
-):
-    new_user_id = _safe_int(
-        new_user_id,
-        0,
-    )
-
-    referral_id = _safe_int(
-        referral_id,
-        0,
-    )
-
-    # --------------------------------------------------------
-    # INVALID REFERRAL
-    # --------------------------------------------------------
-
-    if (
-        new_user_id <= 0
-        or referral_id <= 0
-    ):
-        return False
-
-    # --------------------------------------------------------
-    # SELF REFERRAL BLOCK
-    # --------------------------------------------------------
-
-    if new_user_id == referral_id:
-        logger.warning(
-            "Self referral blocked | user=%s",
-            new_user_id,
-        )
-        return False
-
-    # --------------------------------------------------------
-    # GET USERS
-    # --------------------------------------------------------
-
-    new_user = _get_user(
-        new_user_id
-    )
-
-    referrer = _get_user(
-        referral_id
-    )
-
-    # --------------------------------------------------------
-    # MISSING USERS
-    # --------------------------------------------------------
-
-    if not new_user:
-        logger.warning(
-            "Referral failed: new user missing | "
-            "user=%s",
-            new_user_id,
-        )
-        return False
-
-    if not referrer:
-        logger.warning(
-            "Referral failed: referrer missing | "
-            "referrer=%s",
-            referral_id,
-        )
-        return False
-
-    # --------------------------------------------------------
-    # RESTRICTED ACCOUNTS
-    # --------------------------------------------------------
-
-    if (
-        new_user.get("banned", False)
-        or new_user.get("blacklisted", False)
-    ):
-        return False
-
-    if (
-        referrer.get("banned", False)
-        or referrer.get("blacklisted", False)
-    ):
-        return False
-
-    # --------------------------------------------------------
-    # ALREADY REFERRED
-    # --------------------------------------------------------
-
-    existing_referrer = new_user.get(
-        "referred_by"
-    )
-
-    if existing_referrer is not None:
-        logger.info(
-            "Duplicate referral blocked | "
-            "user=%s | existing_referrer=%s",
-            new_user_id,
-            existing_referrer,
-        )
-        return False
-
-    # --------------------------------------------------------
-    # VALIDATE REWARD
-    # --------------------------------------------------------
-
-    reward = _safe_int(
-        REFERRAL_REWARD,
-        0,
-    )
-
-    if reward <= 0:
-        logger.error(
-            "Invalid REFERRAL_REWARD=%s",
-            REFERRAL_REWARD,
-        )
-        return False
-
-    # --------------------------------------------------------
-    # SAVE REFERRAL
-    # --------------------------------------------------------
-
+    if not user: return
+    db_user = _get_user(user.id)
+    if not db_user: return
+    referrals = _safe_int(db_user.get("referrals", 0))
+    earned = _safe_int(db_user.get("referral_earn", 0))
+    pending = _safe_int(db_user.get("pending_referrals", 0))
+    link = _referral_link(context, user.id) or "⚠️ Referral link unavailable."
+    await update.effective_message.reply_text(
+        f"👥 **REFERRAL PROGRAM**\n\n🔗 Your link:\n`{link}`\n\n👥 Valid Referrals: {referrals}\n⏳ Pending Referrals: {pending}\n💰 Referral Earnings: {earned} Points\n\n🎁 Reward is released after the referred user completes a qualifying activity.\n🏆 Milestones are configured by Admin.",
+        reply_markup=referral_menu(), parse_mode="Markdown")
+
+async def referral_link_callback(update, context):
+    q = update.callback_query; await q.answer()
+    link = _referral_link(context, q.from_user.id)
+    await q.edit_message_text(f"🔗 **Your Referral Link**\n\n`{link or 'Unavailable'}`\n\nInvite friends and earn after their qualifying activity.", reply_markup=referral_menu(), parse_mode="Markdown")
+
+async def referral_stats_callback(update, context):
+    q=update.callback_query; await q.answer(); u=_get_user(q.from_user.id) or {}
+    ms=get_milestones(); refs=_safe_int(u.get("referrals",0)); earned=_safe_int(u.get("referral_earn",0)); pending=_safe_int(u.get("pending_referrals",0))
+    next_ms=next(((n,r) for n,r in ms.items() if n>refs),None)
+    nxt=f"{next_ms[0]} referrals → +{next_ms[1]} Points" if next_ms else "All configured milestones reached."
+    await q.edit_message_text(f"📊 **MY REFERRALS**\n\n👥 Valid: {refs}\n⏳ Pending: {pending}\n💰 Earnings: {earned} Points\n\n🏆 Next milestone: {nxt}", reply_markup=referral_menu(), parse_mode="Markdown")
+
+def process_referral(new_user_id, referral_id):
+    new_user_id, referral_id = _safe_int(new_user_id), _safe_int(referral_id)
+    if new_user_id <= 0 or referral_id <= 0 or new_user_id == referral_id: return False
+    new_user, referrer = _get_user(new_user_id), _get_user(referral_id)
+    if not new_user or not referrer: return False
+    if new_user.get("banned") or new_user.get("blacklisted") or referrer.get("banned") or referrer.get("blacklisted"): return False
+    if new_user.get("referred_by") is not None: return False
+    # Store attribution only. No reward/count is granted at signup.
+    result = update_user(new_user_id, {"referred_by": referral_id, "referral_pending": True, "referral_linked_at": int(time.time())})
+    if result is False: return False
     try:
-        updated = update_user(
-            new_user_id,
-            {
-                "referred_by": referral_id,
-            },
-        )
-
-        # Some database implementations return None
-        # on successful update, so only explicit False
-        # is treated as failure.
-        if updated is False:
-            return False
-
-    except Exception:
-        logger.exception(
-            "Failed to save referral | "
-            "new_user=%s | referrer=%s",
-            new_user_id,
-            referral_id,
-        )
-        return False
-
-    # --------------------------------------------------------
-    # REFERRER REWARD
-    # --------------------------------------------------------
-
-    try:
-        balance_result = add_balance(
-            referral_id,
-            reward,
-        )
-
-        if balance_result is False:
-            # Roll back the referral link if the balance
-            # update explicitly failed.
-            try:
-                update_user(
-                    new_user_id,
-                    {
-                        "referred_by": None,
-                    },
-                )
-            except Exception:
-                logger.exception(
-                    "Referral rollback failed | user=%s",
-                    new_user_id,
-                )
-
-            return False
-
-    except Exception:
-        logger.exception(
-            "Failed to reward referrer | "
-            "referrer=%s | reward=%s",
-            referral_id,
-            reward,
-        )
-
-        try:
-            update_user(
-                new_user_id,
-                {
-                    "referred_by": None,
-                },
-            )
-        except Exception:
-            logger.exception(
-                "Referral rollback failed | user=%s",
-                new_user_id,
-            )
-
-        return False
-
-    # --------------------------------------------------------
-    # UPDATE REFERRAL COUNT/EARNINGS
-    # --------------------------------------------------------
-
-    current_referrals = _safe_int(
-        referrer.get("referrals", 0),
-        0,
-    )
-
-    current_earn = _safe_int(
-        referrer.get("referral_earn", 0),
-        0,
-    )
-
-    try:
-        updated = update_user(
-            referral_id,
-            {
-                "referrals":
-                    current_referrals + 1,
-                "referral_earn":
-                    current_earn + reward,
-            },
-        )
-
-        if updated is False:
-            logger.error(
-                "Failed to update referral counters | "
-                "referrer=%s",
-                referral_id,
-            )
-            return False
-
-    except Exception:
-        logger.exception(
-            "Failed to update referral counters | "
-            "referrer=%s",
-            referral_id,
-        )
-        return False
-
-    # --------------------------------------------------------
-    # ACTIVITY
-    # --------------------------------------------------------
-
-    try:
-        add_activity(
-            referral_id,
-            "👥 Referral reward received",
-            reward,
-        )
-    except Exception:
-        logger.exception(
-            "Failed to record referral activity | "
-            "referrer=%s",
-            referral_id,
-        )
-
-    logger.info(
-        "Referral successful | "
-        "new_user=%s | referrer=%s | reward=%s",
-        new_user_id,
-        referral_id,
-        reward,
-    )
-
+        update_user(referral_id, {"pending_referrals": _safe_int(referrer.get("pending_referrals",0)) + 1})
+    except Exception: logger.exception("Failed to increment pending referrals")
     return True
 
+def activate_referral(new_user_id, qualifying_activity="task"):
+    new_user_id = _safe_int(new_user_id); new_user = _get_user(new_user_id)
+    if not new_user or not new_user.get("referral_pending") or not new_user.get("referred_by"): return False
+    referrer_id = _safe_int(new_user.get("referred_by")); referrer = _get_user(referrer_id)
+    if not referrer or referrer.get("banned") or referrer.get("blacklisted"): return False
+    reward = _referral_reward(); xp = _referral_xp()
+    if reward <= 0: return False
+    # Claim marker is unique per referred user, preventing duplicate reward
+    # when two callbacks arrive at the same time.
+    try:
+        referral_claims.insert_one({"new_user_id": new_user_id, "referrer_id": referrer_id, "created_at": int(time.time()), "activity": qualifying_activity})
+    except DuplicateKeyError:
+        return False
+    except Exception:
+        logger.exception("Referral claim marker failed")
+        return False
+    try:
+        if not add_balance(referrer_id, reward):
+            referral_claims.delete_one({"new_user_id": new_user_id})
+            return False
+        current_refs = _safe_int(referrer.get("referrals",0)) + 1
+        current_earn = _safe_int(referrer.get("referral_earn",0)) + reward
+        current_xp = _safe_int(referrer.get("referral_xp",0)) + xp
+        update_user(referrer_id, {"referrals":current_refs,"referral_earn":current_earn,"referral_xp":current_xp,"pending_referrals":max(0,_safe_int(referrer.get("pending_referrals",0))-1)})
+        add_activity(referrer_id, f"👥 Qualified referral reward +{reward} Points", reward)
+        # Milestones are awarded once per threshold.
+        awarded = referrer.get("referral_milestones_awarded", [])
+        if not isinstance(awarded,list): awarded=[]
+        for count, milestone_reward in get_milestones().items():
+            if current_refs >= count and count not in awarded and milestone_reward > 0:
+                try:
+                    referral_milestone_claims.insert_one({"user_id": referrer_id, "milestone": count, "created_at": int(time.time())})
+                except DuplicateKeyError:
+                    continue
+                except Exception:
+                    logger.exception("Milestone claim marker failed")
+                    continue
+                if add_balance(referrer_id, milestone_reward):
+                    awarded.append(count)
+                    add_activity(referrer_id, f"🏆 Referral milestone {count} +{milestone_reward} Points", milestone_reward)
+        update_user(referrer_id, {"referral_milestones_awarded": awarded})
+        return True
+    except Exception:
+        logger.exception("Referral activation failed | new=%s referrer=%s",new_user_id,referrer_id)
+        return False
 
-# ============================================================
-# HANDLER EXPORTS
-# ============================================================
-
-HANDLER_FUNCTIONS = {
-    "referral": referral,
-    "referral_link_callback":
-        referral_link_callback,
-    "referral_stats_callback":
-        referral_stats_callback,
-    "process_referral":
-        process_referral,
-}
-
-
-__all__ = [
-    "referral_menu",
-    "referral",
-    "referral_link_callback",
-    "referral_stats_callback",
-    "process_referral",
-    "HANDLER_FUNCTIONS",
-        ]
-    
+HANDLER_FUNCTIONS={"referral":referral,"referral_link_callback":referral_link_callback,"referral_stats_callback":referral_stats_callback,"process_referral":process_referral,"activate_referral":activate_referral}
+__all__=["referral_menu","referral","referral_link_callback","referral_stats_callback","process_referral","activate_referral","get_milestones","set_milestone","delete_milestone","HANDLER_FUNCTIONS"]

@@ -295,124 +295,20 @@ async def start(
     # --------------------------------------------------------
 
     referral_id = None
-
     if context.args:
-
-        referral_arg = str(
-            context.args[0]
-        ).strip()
-
+        referral_arg = str(context.args[0]).strip()
         if referral_arg.startswith("ref_"):
-
             try:
-
-                referral_id = int(
-                    referral_arg[4:]
-                )
-
+                referral_id = int(referral_arg[4:])
             except ValueError:
-
                 referral_id = None
 
-    if (
-        referral_id
-        and referral_id != user_id
-    ):
-
-        current_user = get_user(user_id)
-
-        already_referred = current_user.get(
-            "referred_by"
-        )
-
-        if not already_referred:
-
-            referrer = get_user(
-                referral_id
-            )
-
-            if referrer:
-
-                referrer_balance = (
-                    referrer.get(
-                        "balance",
-                        0,
-                    )
-                    + REFERRAL_REWARD
-                )
-
-                referrer_xp = (
-                    referrer.get(
-                        "xp",
-                        0,
-                    )
-                    + REFERRAL_XP
-                )
-
-                referrer_referrals = (
-                    referrer.get(
-                        "referrals",
-                        0,
-                    )
-                    + 1
-                )
-
-                referrer_earn = (
-                    referrer.get(
-                        "referral_earn",
-                        0,
-                    )
-                    + REFERRAL_REWARD
-                )
-
-                referrer_referral_xp = (
-                    referrer.get(
-                        "referral_xp",
-                        0,
-                    )
-                    + REFERRAL_XP
-                )
-
-                update_user(
-                    user_id,
-                    {
-                        "referred_by": referral_id,
-                    },
-                )
-
-                update_user(
-                    referral_id,
-                    {
-                        "balance": referrer_balance,
-                        "xp": referrer_xp,
-                        "level": calculate_level(
-                            referrer_xp
-                        ),
-                        "rank": calculate_rank(
-                            referrer_balance
-                        ),
-                        "referrals": referrer_referrals,
-                        "referral_earn": referrer_earn,
-                        "referral_xp": (
-                            referrer_referral_xp
-                        ),
-                        "total_earned": (
-                            referrer.get(
-                                "total_earned",
-                                0,
-                            )
-                            + REFERRAL_REWARD
-                        ),
-                    },
-                )
-
-                add_activity(
-                    referral_id,
-                    (
-                        "Referral reward "
-                        f"+{REFERRAL_REWARD} Points"
-                    ),
-                )
+    if referral_id and referral_id != user_id:
+        try:
+            from referral import process_referral
+            process_referral(user_id, referral_id)
+        except Exception:
+            logger.exception("Referral attribution failed")
 
     # --------------------------------------------------------
     # Force Join
