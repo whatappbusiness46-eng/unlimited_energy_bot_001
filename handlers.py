@@ -627,7 +627,7 @@ async def help_command(
         "📜 Activity — View recent activity\n\n"
 
         "🆘 Need help?\n"
-        f"Contact the Admin: @{ADMIN_USERNAME or 'mdrifatowner05'}",
+        f"Contact the Admin: @mdrifatowner05",
 
         parse_mode="Markdown",
     )

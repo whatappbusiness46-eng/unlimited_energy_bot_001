@@ -8,7 +8,7 @@ from pymongo.errors import DuplicateKeyError
 logger = logging.getLogger(__name__)
 DEFAULT_REWARD = 10
 DEFAULT_XP = 10
-DEFAULT_MILESTONES = {5: 50, 10: 100, 25: 250, 100: 1000}
+DEFAULT_MILESTONES = {5: 100, 10: 250, 25: 700, 50: 1500, 100: 3500}
 referral_claims = db["referral_claims"]
 referral_milestone_claims = db["referral_milestone_claims"]
 try:
@@ -68,25 +68,48 @@ def referral_menu():
 
 async def referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    if not user: return
+    if not user:
+        return
     db_user = _get_user(user.id)
-    if not db_user: return
+    if not db_user:
+        return
     referrals = _safe_int(db_user.get("referrals", 0))
     earned = _safe_int(db_user.get("referral_earn", 0))
+    referral_xp = _safe_int(db_user.get("referral_xp", 0))
     pending = _safe_int(db_user.get("pending_referrals", 0))
     link = _referral_link(context, user.id) or "⚠️ Referral link unavailable."
+
     ms = get_milestones()
+    milestone_lines = [
+        f"{n} Referrals → +{reward} Points" for n, reward in ms.items()
+    ]
     next_ms = next(((n, reward) for n, reward in ms.items() if n > referrals), None)
-    milestone_lines = [f"• {n} referrals → +{reward} Points" for n, reward in ms.items()]
-    next_line = (f"🎯 Next: {next_ms[0]} referrals → +{next_ms[1]} Points ({referrals}/{next_ms[0]})"
-                 if next_ms else "🎯 All configured milestones reached.")
+
+    if next_ms:
+        next_block = (
+            f"🎯 **Next Milestone:**\n"
+            f"{next_ms[0]} referrals → +{next_ms[1]} Points\n"
+            f"Progress: {referrals}/{next_ms[0]}"
+        )
+    else:
+        next_block = "🎯 **Next Milestone:**\nAll configured milestones reached."
+
     await update.effective_message.reply_text(
-        f"👥 **REFERRAL CENTER**\n\n🎁 Invite friends and earn rewards!\n\n"
-        f"👥 Valid Referrals: {referrals}\n⏳ Pending Referrals: {pending}\n"
-        f"💰 Referral Earnings: {earned} Points\n\n🏆 **REFERRAL MILESTONES**\n"
+        f"👥 **REFERRAL CENTER**\n\n"
+        f"🎁 Invite friends and earn rewards!\n\n"
+        f"👥 Valid Referrals: {referrals}\n"
+        f"⏳ Pending Referrals: {pending}\n"
+        f"💰 Referral Earnings: {earned} Points\n"
+        f"⭐ Referral XP: {referral_xp}\n\n"
+        f"🏆 **REFERRAL MILESTONES**\n"
         f"{chr(10).join(milestone_lines) if milestone_lines else 'No milestones configured.'}\n\n"
-        f"{next_line}\n\n🎁 Referral rewards are released after the referred user completes a qualifying activity.",
-        reply_markup=referral_menu(), parse_mode="Markdown")
+        f"{next_block}\n\n"
+        f"🔗 **Your Referral Link:**\n`{link}`\n\n"
+        f"📢 Share your link with your friends.\n\n"
+        f"🎁 Referral rewards are released after the referred user completes a qualifying activity.",
+        reply_markup=referral_menu(),
+        parse_mode="Markdown",
+    )
 
 async def referral_link_callback(update, context):
     q = update.callback_query; await q.answer()

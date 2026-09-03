@@ -64,6 +64,7 @@ from vip import (
 from referral import (
     referral_link_callback,
     referral_stats_callback,
+    get_milestones,
 )
 
 from offers import (
@@ -498,7 +499,22 @@ async def show_referral(
 
         f"`{referral_link}`\n\n"
 
-        "📢 Share your link with your friends.",
+        "🏆 **REFERRAL MILESTONES**\n\n"
+        + ("\n".join(
+            f"• {count} referrals → +{reward} Points"
+            for count, reward in get_milestones().items()
+        ) or "No milestones configured.")
+        + "\n\n"
+        + (
+            f"🎯 Next Milestone: {next_ms[0]} referrals → +{next_ms[1]} Points"
+            if (next_ms := next(((count, reward) for count, reward in get_milestones().items() if count > int(referrals or 0)), None))
+            else "🎯 All configured milestones reached!"
+        )
+        + "\n\n"
+        + "🔗 **Your Referral Link:**\n"
+        + f"`{referral_link}`\n\n"
+        + "📢 Share your link with your friends.\n"
+        + "🎁 Referral rewards are released after qualifying activity.",
 
         reply_markup=InlineKeyboardMarkup(
             keyboard
@@ -840,7 +856,7 @@ async def show_help(
         "📜 Activity — View recent activity\n\n"
 
         "🆘 Need help?\n"
-        f"Contact the Admin: @{ADMIN_USERNAME}" if ADMIN_USERNAME else f"Contact the Admin: @{ADMIN_USERNAME}" if ADMIN_USERNAME else "Contact the Admin.",
+        "Contact the Admin: @mdrifatowner05",
 
         reply_markup=home_keyboard(),
 
