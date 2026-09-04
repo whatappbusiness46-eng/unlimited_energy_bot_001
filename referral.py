@@ -6,9 +6,9 @@ from database import get_user, update_user, add_balance, add_activity, db
 from pymongo.errors import DuplicateKeyError
 
 logger = logging.getLogger(__name__)
-DEFAULT_REWARD = 10
+DEFAULT_REWARD = 0  # No per-referral points; rewards are milestone-only.
 DEFAULT_XP = 10
-DEFAULT_MILESTONES = {5: 100, 10: 250, 25: 700, 50: 1500, 100: 3500}
+DEFAULT_MILESTONES = {5: 50, 10: 100, 25: 250, 50: 500, 100: 1000}
 referral_claims = db["referral_claims"]
 referral_milestone_claims = db["referral_milestone_claims"]
 try:
@@ -143,8 +143,10 @@ def activate_referral(new_user_id, qualifying_activity="task"):
     if not new_user or not new_user.get("referral_pending") or not new_user.get("referred_by"): return False
     referrer_id = _safe_int(new_user.get("referred_by")); referrer = _get_user(referrer_id)
     if not referrer or referrer.get("banned") or referrer.get("blacklisted"): return False
-    reward = _referral_reward(); xp = _referral_xp()
-    if reward <= 0: return False
+    # Count a referral only after qualifying activity, but do not pay a
+    # per-referral point bonus. Points are awarded only at milestones.
+    reward = 0
+    xp = _referral_xp()
     # Claim marker is unique per referred user, preventing duplicate reward
     # when two callbacks arrive at the same time.
     try:
@@ -155,14 +157,12 @@ def activate_referral(new_user_id, qualifying_activity="task"):
         logger.exception("Referral claim marker failed")
         return False
     try:
-        if not add_balance(referrer_id, reward):
-            referral_claims.delete_one({"new_user_id": new_user_id})
-            return False
         current_refs = _safe_int(referrer.get("referrals",0)) + 1
         current_earn = _safe_int(referrer.get("referral_earn",0)) + reward
         current_xp = _safe_int(referrer.get("referral_xp",0)) + xp
         update_user(referrer_id, {"referrals":current_refs,"referral_earn":current_earn,"referral_xp":current_xp,"pending_referrals":max(0,_safe_int(referrer.get("pending_referrals",0))-1)})
-        add_activity(referrer_id, f"👥 Qualified referral reward +{reward} Points", reward)
+        if xp > 0:
+            add_activity(referrer_id, f"👥 Qualified referral XP +{xp}", 0)
         # Milestones are awarded once per threshold.
         awarded = referrer.get("referral_milestones_awarded", [])
         if not isinstance(awarded,list): awarded=[]

@@ -266,156 +266,14 @@ def complete_shortlink(
     shortlink_id,
     token,
 ):
-    item = get_shortlink(shortlink_id)
+    """
+    Generic verification cannot prove that a provider's ad/steps were
+    completed. Do not credit points from the user's Verify button.
+    A future provider-specific server-to-server callback can implement
+    verified crediting separately.
+    """
+    return False
 
-    if not item or not item["enabled"]:
-        return False
-
-    if not validate_shortlink_token(
-        token,
-        user_id=user_id,
-        shortlink_id=shortlink_id,
-    ):
-        return False
-
-    if not shortlink_available(
-        user_id,
-        shortlink_id,
-    ):
-        return False
-
-    user = _get_user(user_id)
-
-    if _blocked(user):
-        return False
-
-    claims = _claims(user)
-    claims[str(shortlink_id)] = _now()
-
-    try:
-        result = update_user(
-            user_id,
-            {"shortlink_claims": claims},
-        )
-        if result is False:
-            return False
-
-        reward = _safe_int(
-            item.get("reward", 0),
-            0,
-        )
-
-        if reward > 0:
-            result = add_balance(
-                user_id,
-                reward,
-            )
-            if result is False:
-                return False
-
-            try:
-                add_activity(
-                    user_id,
-                    f"🔗 Shortlink completed: {item['name']}",
-                    reward,
-                )
-            except Exception:
-                logger.exception(
-                    "Shortlink activity failed | user=%s link=%s",
-                    user_id,
-                    shortlink_id,
-                )
-
-        TOKENS[token]["used"] = True
-        return True
-
-    except Exception:
-        logger.exception(
-            "Shortlink completion failed | user=%s link=%s",
-            user_id,
-            shortlink_id,
-        )
-        return False
-
-
-def shortlinks_menu(user_id=None):
-    keyboard = []
-
-    for item in get_shortlinks():
-        available = (
-            True
-            if user_id is None
-            else shortlink_available(user_id, item["id"])
-        )
-
-        label = (
-            f"🔗 {item['name']}"
-            if available
-            else f"⏳ {item['name']}"
-        )
-
-        keyboard.append([
-            InlineKeyboardButton(
-                label,
-                callback_data=f"shortlink_{item['id']}",
-            )
-        ])
-
-    keyboard.append([
-        InlineKeyboardButton("🏠 Home", callback_data="home")
-    ])
-
-    return InlineKeyboardMarkup(keyboard)
-
-
-async def shortlinks_page(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    user = update.effective_user
-    message = update.effective_message
-
-    if not user or not message:
-        return
-
-    db_user = _get_user(user.id)
-
-    if _blocked(db_user):
-        await message.reply_text("🚫 Your account is restricted.")
-        return
-
-    items = get_shortlinks()
-
-    if not items:
-        text = (
-            "🔗 **SHORTLINKS**\n\n"
-            "No shortlinks are available right now."
-        )
-    else:
-        lines = [
-            "🔗 **SHORTLINKS**",
-            "",
-            "Complete a shortlink to earn rewards:",
-            "",
-        ]
-
-        for item in items:
-            status = (
-                "🟢 Available"
-                if shortlink_available(user.id, item["id"])
-                else "🔴 Cooldown"
-            )
-            lines.append(
-                f"{status} — {item['name']} (+{item['reward']})"
-            )
-
-        text = "\n".join(lines)
-
-    await message.reply_text(
-        text,
-        reply_markup=shortlinks_menu(user.id),
-        parse_mode="Markdown",
-    )
 
 
 async def shortlink_callback(
@@ -491,8 +349,8 @@ async def shortlink_callback(
         "🔗 **SHORTLINK**\n\n"
         f"📌 {item['name']}\n\n"
         f"💰 Reward: {item['reward']} Points\n\n"
-        "Open the shortlink and complete it, then return "
-        "to verify your reward.",
+        "Open the shortlink and complete the provider steps.\n"
+        "Points are credited only after verified completion.",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton(
                 "🚀 Open Shortlink",
@@ -561,9 +419,9 @@ async def shortlink_verify_callback(
         )
     else:
         text = (
-            "❌ **VERIFICATION FAILED**\n\n"
-            "The token is invalid, expired, already used, "
-            "or the shortlink is on cooldown."
+            "⏳ **COMPLETION NOT VERIFIED**\n\n"
+            "Your visit was opened, but the provider has not sent a "
+            "verified completion callback. No points were added."
         )
 
     await query.edit_message_text(

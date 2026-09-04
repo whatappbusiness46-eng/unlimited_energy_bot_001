@@ -486,8 +486,11 @@ async def show_referral(
 
         "🎁 Invite friends and earn rewards!\n\n"
 
-        f"👥 Total Referrals: "
+        f"👥 Valid Referrals: "
         f"{referrals}\n"
+
+        f"⏳ Pending Referrals: "
+        f"{int(user.get("pending_referrals", 0) or 0)}\n"
 
         f"💰 Referral Earnings: "
         f"{referral_earn} Points\n"
@@ -511,8 +514,6 @@ async def show_referral(
             else "🎯 All configured milestones reached!"
         )
         + "\n\n"
-        + "🔗 **Your Referral Link:**\n"
-        + f"`{referral_link}`\n\n"
         + "📢 Share your link with your friends.\n"
         + "🎁 Referral rewards are released after qualifying activity.",
 
