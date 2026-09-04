@@ -1,3 +1,4 @@
+from telegram.error import BadRequest
 # ============================================================
 # callbacks.py
 # Unlimited Energy Bot V2
@@ -162,6 +163,23 @@ def back_profile_keyboard():
 # BALANCE
 # ============================================================
 
+
+async def _safe_edit_message_text(query, text, **kwargs):
+    try:
+        return await _safe_edit_message_text(query, text, **kwargs)
+    except BadRequest as exc:
+        if "Message is not modified" in str(exc):
+            return None
+        raise
+
+async def _safe_edit_message_reply_markup(query, **kwargs):
+    try:
+        return await _safe_edit_message_reply_markup(query, **kwargs)
+    except BadRequest as exc:
+        if "Message is not modified" in str(exc):
+            return None
+        raise
+
 async def show_balance(
     query,
     user_id,
@@ -171,7 +189,7 @@ async def show_balance(
 
     if not user:
 
-        await query.edit_message_text(
+        await _safe_edit_message_text(query, 
             "⚠️ User account not found.",
             reply_markup=home_keyboard(),
         )
@@ -199,7 +217,7 @@ async def show_balance(
         + premium_balance
     )
 
-    await query.edit_message_text(
+    await _safe_edit_message_text(query, 
 
         "💰 **YOUR WALLET**\n\n"
 
@@ -237,7 +255,7 @@ async def show_profile(
 
     if not user:
 
-        await query.edit_message_text(
+        await _safe_edit_message_text(query, 
             "⚠️ User account not found.",
             reply_markup=home_keyboard(),
         )
@@ -347,7 +365,7 @@ async def show_profile(
 
     ]
 
-    await query.edit_message_text(
+    await _safe_edit_message_text(query, 
 
         "👤 **YOUR PROFILE**\n\n"
 
@@ -402,7 +420,7 @@ async def show_referral(
 
     if not user:
 
-        await query.edit_message_text(
+        await _safe_edit_message_text(query, 
             "⚠️ User account not found.",
             reply_markup=home_keyboard(),
         )
@@ -437,7 +455,7 @@ async def show_referral(
             error,
         )
 
-        await query.edit_message_text(
+        await _safe_edit_message_text(query, 
             "⚠️ Unable to generate referral link.",
             reply_markup=home_keyboard(),
         )
@@ -480,7 +498,7 @@ async def show_referral(
 
     ]
 
-    await query.edit_message_text(
+    await _safe_edit_message_text(query, 
 
         "👥 **REFERRAL CENTER**\n\n"
 
@@ -538,7 +556,7 @@ async def show_rank(
 
     if not user:
 
-        await query.edit_message_text(
+        await _safe_edit_message_text(query, 
             "⚠️ User account not found.",
             reply_markup=home_keyboard(),
         )
@@ -560,7 +578,7 @@ async def show_rank(
         0,
     )
 
-    await query.edit_message_text(
+    await _safe_edit_message_text(query, 
 
         "🏆 **YOUR RANK**\n\n"
 
@@ -615,7 +633,7 @@ async def show_user_stats(
 
     if not user:
 
-        await query.edit_message_text(
+        await _safe_edit_message_text(query, 
             "⚠️ User account not found.",
             reply_markup=home_keyboard(),
         )
@@ -705,7 +723,7 @@ async def show_user_stats(
         0,
     )
 
-    await query.edit_message_text(
+    await _safe_edit_message_text(query, 
 
         "📊 **YOUR STATISTICS**\n\n"
 
@@ -758,7 +776,7 @@ async def show_user_activity(
 
     if not user:
 
-        await query.edit_message_text(
+        await _safe_edit_message_text(query, 
             "⚠️ User account not found.",
             reply_markup=home_keyboard(),
         )
@@ -780,7 +798,7 @@ async def show_user_activity(
 
     if not activities:
 
-        await query.edit_message_text(
+        await _safe_edit_message_text(query, 
 
             "📜 **RECENT ACTIVITY**\n\n"
             "No activity recorded yet.",
@@ -821,7 +839,7 @@ async def show_user_activity(
             f"  🕒 {timestamp}\n\n"
         )
 
-    await query.edit_message_text(
+    await _safe_edit_message_text(query, 
 
         text,
 
@@ -839,7 +857,7 @@ async def show_help(
     query,
 ):
 
-    await query.edit_message_text(
+    await _safe_edit_message_text(query, 
 
         "❓ **HELP CENTER**\n\n"
 
@@ -945,7 +963,7 @@ async def verify_join_callback(
             show_alert=True,
         )
 
-        await query.edit_message_text(
+        await _safe_edit_message_text(query, 
 
             "❌ **JOIN NOT COMPLETED**\n\n"
 
@@ -966,7 +984,7 @@ async def verify_join_callback(
         "✅ Verification successful!"
     )
 
-    await query.edit_message_text(
+    await _safe_edit_message_text(query, 
 
         "✅ **VERIFICATION SUCCESSFUL!**\n\n"
 
@@ -1145,7 +1163,7 @@ async def button_callback(
     user_data = get_user(user_id)
 
     if not user_data:
-        await query.edit_message_text(
+        await _safe_edit_message_text(query, 
             "⚠️ User account not found.\n\n"
             "Please use /start first.",
             reply_markup=home_keyboard(),
@@ -1157,7 +1175,7 @@ async def button_callback(
     # --------------------------------------------------------
 
     if user_data.get("banned", False):
-        await query.edit_message_text(
+        await _safe_edit_message_text(query, 
             "🚫 Your account has been banned.",
             reply_markup=home_keyboard(),
         )
@@ -1168,7 +1186,7 @@ async def button_callback(
     # --------------------------------------------------------
 
     if user_data.get("blacklisted", False):
-        await query.edit_message_text(
+        await _safe_edit_message_text(query, 
             "🚫 Your account is restricted.",
             reply_markup=home_keyboard(),
         )
@@ -1180,7 +1198,7 @@ async def button_callback(
 
     if data == "home":
         try:
-            await query.edit_message_text(
+            await _safe_edit_message_text(query, 
                 "🏠 **MAIN MENU**\n\n"
                 "🚀 Unlimited Energy Bot\n\n"
                 "👇 Choose an option:",
@@ -1227,7 +1245,7 @@ async def button_callback(
             )
 
             try:
-                await query.edit_message_text(
+                await _safe_edit_message_text(query, 
                     "⚠️ Earn feature temporarily unavailable.",
                     reply_markup=back_earn_keyboard(),
                 )
@@ -1399,7 +1417,7 @@ async def button_callback(
             await shortlink_verify_callback(update, context)
         except Exception:
             logger.exception("Shortlink verification callback failed")
-            await query.edit_message_text(
+            await _safe_edit_message_text(query, 
                 "⚠️ Shortlink verification failed.",
                 reply_markup=back_earn_keyboard(),
             )
@@ -1410,7 +1428,7 @@ async def button_callback(
             await shortlink_callback(update, context)
         except Exception:
             logger.exception("Shortlink callback failed")
-            await query.edit_message_text(
+            await _safe_edit_message_text(query, 
                 "⚠️ Shortlink is temporarily unavailable.",
                 reply_markup=back_earn_keyboard(),
             )
@@ -1444,7 +1462,7 @@ async def button_callback(
                 "Premium page failed"
             )
 
-            await query.edit_message_text(
+            await _safe_edit_message_text(query, 
                 "⚠️ Premium system is temporarily unavailable.",
                 reply_markup=home_keyboard(),
             )
@@ -1457,12 +1475,12 @@ async def button_callback(
 
     if data == "premium_renew":
         await query.answer()
-        await query.edit_message_text("💳 **PREMIUM RENEWAL**\n\nChoose a payment method:", reply_markup=method_keyboard("premium"), parse_mode="Markdown")
+        await _safe_edit_message_text(query, "💳 **PREMIUM RENEWAL**\n\nChoose a payment method:", reply_markup=method_keyboard("premium"), parse_mode="Markdown")
         return
 
     if data == "premium_buy":
         await query.answer()
-        await query.edit_message_text("💳 **PREMIUM PAYMENT**\n\nChoose a payment method:", reply_markup=method_keyboard("premium"), parse_mode="Markdown")
+        await _safe_edit_message_text(query, "💳 **PREMIUM PAYMENT**\n\nChoose a payment method:", reply_markup=method_keyboard("premium"), parse_mode="Markdown")
         return
 
     if data.startswith("pay_method_"):
@@ -1470,24 +1488,24 @@ async def button_callback(
         try:
             _, rest = data.split("pay_method_",1); method, product = rest.split(":",1)
         except ValueError:
-            await query.edit_message_text("⚠️ Invalid payment option."); return
+            await _safe_edit_message_text(query, "⚠️ Invalid payment option."); return
         if product == "premium": price = PREMIUM_CASH_PRICE
         elif product.startswith("vip:"):
             prices={1:VIP1_CASH_PRICE,2:VIP2_CASH_PRICE,3:VIP3_CASH_PRICE,4:VIP4_CASH_PRICE,5:VIP5_CASH_PRICE}
             try: price=prices[int(product.split(":",1)[1])]
-            except Exception: await query.edit_message_text("⚠️ Invalid VIP level."); return
-        else: await query.edit_message_text("⚠️ Invalid product."); return
+            except Exception: await _safe_edit_message_text(query, "⚠️ Invalid VIP level."); return
+        else: await _safe_edit_message_text(query, "⚠️ Invalid product."); return
         pay=create_payment(query.from_user.id,product,price,method)
-        await query.edit_message_text(payment_instructions(method,product,price), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🧾 Submit Transaction ID",callback_data=f"pay_submit:{pay['payment_id']}")],[InlineKeyboardButton("🏠 Home",callback_data="home")]]), parse_mode="Markdown")
+        await _safe_edit_message_text(query, payment_instructions(method,product,price), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🧾 Submit Transaction ID",callback_data=f"pay_submit:{pay['payment_id']}")],[InlineKeyboardButton("🏠 Home",callback_data="home")]]), parse_mode="Markdown")
         return
 
     if data.startswith("pay_submit:"):
         await query.answer()
         pid=data.split(":",1)[1]; pay=get_payment(pid)
         if not pay or int(pay.get("user_id",0))!=query.from_user.id or pay.get("status")!="pending":
-            await query.edit_message_text("⚠️ Payment request is invalid or already processed.", reply_markup=home_keyboard()); return
+            await _safe_edit_message_text(query, "⚠️ Payment request is invalid or already processed.", reply_markup=home_keyboard()); return
         context.user_data["payment_reference_id"]=pid; context.user_data["admin_action"]="payment_reference"
-        await query.edit_message_text("🧾 Send your payment **Transaction ID / reference** now.", reply_markup=home_keyboard(), parse_mode="Markdown")
+        await _safe_edit_message_text(query, "🧾 Send your payment **Transaction ID / reference** now.", reply_markup=home_keyboard(), parse_mode="Markdown")
         return
 
     if data == "premium_buy":
@@ -1501,7 +1519,7 @@ async def button_callback(
                 "Premium purchase failed"
             )
 
-            await query.edit_message_text(
+            await _safe_edit_message_text(query, 
                 "⚠️ Premium purchase failed.",
                 reply_markup=InlineKeyboardMarkup(
                     [
@@ -1538,7 +1556,7 @@ async def button_callback(
                 "Premium renewal failed"
             )
 
-            await query.edit_message_text(
+            await _safe_edit_message_text(query, 
                 "⚠️ Premium renewal failed.",
                 reply_markup=InlineKeyboardMarkup(
                     [
@@ -1575,7 +1593,7 @@ async def button_callback(
                 "VIP page failed"
             )
 
-            await query.edit_message_text(
+            await _safe_edit_message_text(query, 
                 "⚠️ VIP system is temporarily unavailable.",
                 reply_markup=home_keyboard(),
             )
@@ -1587,7 +1605,7 @@ async def button_callback(
 
     if data.startswith("vip_confirm_"):
         if not is_vip_purchase_enabled():
-            await query.edit_message_text(
+            await _safe_edit_message_text(query, 
                 "🔴 **VIP PURCHASE OFF**\n\n"
                 "VIP purchases are temporarily disabled by Admin.",
                 reply_markup=InlineKeyboardMarkup([
@@ -1608,7 +1626,7 @@ async def button_callback(
                 "VIP confirmation failed"
             )
 
-            await query.edit_message_text(
+            await _safe_edit_message_text(query, 
                 "⚠️ VIP purchase failed.",
                 reply_markup=InlineKeyboardMarkup(
                     [
@@ -1702,11 +1720,11 @@ async def button_callback(
 
     if data.startswith("vip_level_"):
         try: level=int(data.rsplit("_",1)[1])
-        except Exception: await query.edit_message_text("⚠️ Invalid VIP level."); return
+        except Exception: await _safe_edit_message_text(query, "⚠️ Invalid VIP level."); return
         prices={1:VIP1_CASH_PRICE,2:VIP2_CASH_PRICE,3:VIP3_CASH_PRICE,4:VIP4_CASH_PRICE,5:VIP5_CASH_PRICE}
-        if level not in prices: await query.edit_message_text("⚠️ Invalid VIP level."); return
+        if level not in prices: await _safe_edit_message_text(query, "⚠️ Invalid VIP level."); return
         await query.answer(); product=f"vip:{level}"; price=prices[level]
-        await query.edit_message_text(f"💎 **VIP {level} PAYMENT**\n\n💰 Price: **৳{price:g}**\n⏳ Duration: **30 days**\n\nChoose a payment method:", reply_markup=method_keyboard(product), parse_mode="Markdown")
+        await _safe_edit_message_text(query, f"💎 **VIP {level} PAYMENT**\n\n💰 Price: **৳{price:g}**\n⏳ Duration: **30 days**\n\nChoose a payment method:", reply_markup=method_keyboard(product), parse_mode="Markdown")
         return
 
     if data.startswith("vip_level_"):
@@ -1714,7 +1732,7 @@ async def button_callback(
         # Admin-controlled VIP purchase switch
         if not is_vip_purchase_enabled():
 
-            await query.edit_message_text(
+            await _safe_edit_message_text(query, 
                 "🔴 **VIP PURCHASE OFF**\n\n"
                 "VIP purchases are temporarily disabled "
                 "by Admin.\n\n"
@@ -1750,7 +1768,7 @@ async def button_callback(
                 "VIP purchase callback failed"
             )
 
-            await query.edit_message_text(
+            await _safe_edit_message_text(query, 
                 "⚠️ VIP purchase failed.",
                 reply_markup=InlineKeyboardMarkup(
                     [
@@ -1808,7 +1826,7 @@ async def button_callback(
         data,
     )
 
-    await query.edit_message_text(
+    await _safe_edit_message_text(query, 
         "⚠️ This button is not available.",
         reply_markup=home_keyboard(),
     )
