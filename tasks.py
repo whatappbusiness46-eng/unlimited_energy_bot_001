@@ -67,11 +67,19 @@ def register_task(task_id: str, title: str, description: str = "", reward: int =
     doc = {"id": task_id, "title": str(title or task_id)[:120], "description": str(description or "")[:1000],
            "reward": max(0, _safe_int(reward)), "url": url, "cooldown": max(0, _safe_int(cooldown, TASK_COOLDOWN)),
            "enabled": bool(enabled), "xp": max(0, _safe_int(xp, DEFAULT_XP)), "energy": max(0, _safe_int(energy, DEFAULT_ENERGY)),
-           "updated_at": _now(), "created_at": _now()}
+           "updated_at": _now()}
     try:
-        tasks_collection.update_one({"id": task_id}, {"$set": doc, "$setOnInsert": {"created_at": _now()}}, upsert=True)
+        # created_at must exist only in $setOnInsert. Putting the same field
+        # in both $set and $setOnInsert causes MongoDB WriteError code 40.
+        tasks_collection.update_one(
+            {"id": task_id},
+            {"$set": doc, "$setOnInsert": {"created_at": _now()}},
+            upsert=True,
+        )
         return True
-    except Exception: logger.exception("register task failed"); return False
+    except Exception:
+        logger.exception("register task failed")
+        return False
 
 
 def get_tasks(include_disabled=False):
