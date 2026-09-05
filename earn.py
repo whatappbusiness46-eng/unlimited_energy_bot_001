@@ -31,20 +31,10 @@ from database import (
     use_spin_ticket,
     use_lucky_box,
     use_scratch_card,
-    get_membership_multiplier,
 )
 
 
 logger = logging.getLogger(__name__)
-
-def _member_reward(user_id, reward):
-    """Apply active Premium/VIP earning multiplier to point rewards."""
-    try:
-        mult = max(1.0, float(get_membership_multiplier(user_id)))
-    except Exception:
-        mult = 1.0
-    return int(round(max(0, int(reward)) * mult))
-
 
 
 # ============================================================
@@ -122,12 +112,6 @@ def earn_menu():
             ],
             [
                 InlineKeyboardButton(
-                    "🎁 CPA Offers",
-                    callback_data="offers",
-                )
-            ],
-            [
-                InlineKeyboardButton(
                     "🎡 Spin Wheel",
                     callback_data="spin",
                 )
@@ -187,7 +171,6 @@ async def earn_page(
         "🎁 Daily Bonus\n"
         "📋 Complete Tasks\n"
         "🔗 Complete Shortlinks\n"
-        "🎁 CPA Offers\n"
         "🎡 Spin Wheel\n"
         "🎁 Lucky Box\n"
         "🎫 Scratch Card\n"
@@ -309,7 +292,6 @@ async def daily_bonus(
     # Give reward
     # --------------------------------------------------------
 
-    reward = _member_reward(user_id, reward)
     add_bonus(
         user_id,
         reward,

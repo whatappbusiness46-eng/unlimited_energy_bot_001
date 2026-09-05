@@ -112,28 +112,16 @@ def _extract_offer_list(payload):
         return ""
 
     items = []
-    # CPAGrip's documented RSS feed uses <offers><offer>...</offer></offers>
-    # rather than a standard RSS <item> envelope. Accept both formats.
     for node in root.iter():
         tag = node.tag.rsplit("}", 1)[-1].lower()
-        if tag not in {"item", "offer"}:
+        if tag != "item":
             continue
         raw = {
-            "title": text(node, "title", "name", "offer_title"),
+            "title": text(node, "title", "name"),
             "description": text(node, "description", "desc", "details"),
-            "link": text(
-                node,
-                "offerlink", "offer_link", "link", "url",
-                "click_url", "tracking_url"
-            ),
-            "offer_id": text(
-                node,
-                "offer_id", "offerid", "id", "guid", "offerid"
-            ),
-            "payout": text(
-                node,
-                "payout", "reward", "amount", "commission", "revenue"
-            ),
+            "link": text(node, "link", "url", "click_url", "tracking_url"),
+            "offer_id": text(node, "offer_id", "offerid", "id", "guid"),
+            "payout": text(node, "payout", "reward", "amount", "commission"),
             "category": text(node, "category", "vertical", "type"),
             "platform": text(node, "platform", "device", "os"),
         }
@@ -208,8 +196,6 @@ def sync_cpagrip_offers(user_id: int) -> int:
                 upsert=True,
             )
             count += 1
-        if count == 0:
-            logger.warning("CPAGrip feed returned no parseable offers | user=%s | url=%s", user_id, url.split("?")[0])
         return count
     except Exception:
         logger.exception("CPAGrip offer sync failed | user=%s", user_id)
@@ -262,17 +248,14 @@ def delete_provider_offer(provider: str, offer_id: str):
 
 
 def _reward_points(reward):
-    """Convert provider USD payout to member points using the configured share."""
     try:
         amount = Decimal(str(reward))
         rate = Decimal(_env("REWARD_POINTS_PER_USD", "1000"))
-        share = Decimal(_env("CPAGRIP_USER_REWARD_PERCENT", "40")) / Decimal("100")
-    except (InvalidOperation, ValueError, TypeError):
+    except (InvalidOperation, ValueError):
         return 0
-    if amount <= 0 or rate <= 0 or share <= 0:
+    if amount <= 0 or rate <= 0:
         return 0
-    share = min(share, Decimal("1"))
-    return max(0, int((amount * rate * share).quantize(Decimal("1"))))
+    return max(0, int((amount * rate).quantize(Decimal("1"))))
 
 
 def _verify_postback(provider: str, params: Dict[str, Any]) -> bool:
