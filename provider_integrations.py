@@ -1,3 +1,4 @@
+CPAGRIP_OFFER_LIMIT = max(1, int(os.getenv("CPAGRIP_OFFER_LIMIT", "3")))
 # provider_integrations.py
 # CPAGrip-only live offer + verified postback integration.
 
@@ -31,6 +32,14 @@ try:
 except Exception:
     logger.exception("Provider indexes could not be created.")
 
+
+
+def _apply_cpagrip_limit(offers):
+    try:
+        limit = max(1, int(os.getenv("CPAGRIP_OFFER_LIMIT", "3")))
+    except Exception:
+        limit = 3
+    return list(offers or [])[:limit]
 
 def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()

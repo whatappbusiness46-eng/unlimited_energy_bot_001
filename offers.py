@@ -21,6 +21,14 @@ logger = logging.getLogger(__name__)
 OFFERS: Dict[str, Dict[str, Any]] = {}
 
 
+
+def _display_limit_offers(offers):
+    try:
+        limit = max(1, int(os.getenv("CPAGRIP_OFFER_LIMIT", "3")))
+    except Exception:
+        limit = 3
+    return list(offers or [])[:limit]
+
 def _get_user(user_id):
     try:
         return get_user(user_id, create=False)
