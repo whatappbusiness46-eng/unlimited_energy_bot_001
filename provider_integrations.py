@@ -1,7 +1,7 @@
+import os
 CPAGRIP_OFFER_LIMIT = max(1, int(os.getenv("CPAGRIP_OFFER_LIMIT", "3")))
 # provider_integrations.py
 # CPAGrip-only live offer + verified postback integration.
-
 import hashlib
 import hmac
 import json
