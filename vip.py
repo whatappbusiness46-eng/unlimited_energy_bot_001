@@ -51,15 +51,15 @@ VIP_LEVELS = {
     },
     3: {
         "daily_multiplier": 1.50,
-        "extra_spins": 2,
+        "extra_spins": 3,
     },
     4: {
         "daily_multiplier": 1.75,
-        "extra_spins": 3,
+        "extra_spins": 4,
     },
     5: {
         "daily_multiplier": 2.00,
-        "extra_spins": 4,
+        "extra_spins": 5,
     },
 }
 
@@ -703,9 +703,9 @@ async def vip_page(
             "Choose your VIP level:\n\n"
             "🥉 VIP 1 — 1.30x + 1 Spin\n"
             "🥈 VIP 2 — 1.40x + 2 Spins\n"
-            "🥇 VIP 3 — 1.50x + 2 Spins\n"
-            "💎 VIP 4 — 1.75x + 3 Spins\n"
-            "👑 VIP 5 — 2.00x + 4 Spins\n\n"
+            "🥇 VIP 3 — 1.50x + 3 Spins\n"
+            "💎 VIP 4 — 1.75x + 4 Spins\n"
+            "👑 VIP 5 — 2.00x + 5 Spins\n\n"
             "💰 **Cash Prices:**\n"
             f"VIP 1 — ৳{VIP1_CASH_PRICE:g}\n"
             f"VIP 2 — ৳{VIP2_CASH_PRICE:g}\n"

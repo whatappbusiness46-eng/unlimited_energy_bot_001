@@ -2668,17 +2668,42 @@ async def admin_text_handler(
         context.user_data.clear(); await update.message.reply_text("✅ Milestone deleted." if ok else "❌ Milestone not found.", reply_markup=admin_back()); return True
 
     if action == "add_task":
-        parts=[x.strip() for x in text.split("|")]
+        parts = [x.strip() for x in text.split("|", 7)]
         if len(parts) != 8:
-            await update.message.reply_text("❌ Format: id|title|description|url|reward|cooldown|xp|energy", reply_markup=admin_back()); return True
-        tid,title,desc,url,reward,cd,xp,energy=parts
-        if desc == "-": desc=""
-        if url == "-": url=None
+            await update.message.reply_text(
+                "❌ Format: id|title|description|url|reward|cooldown|xp|energy",
+                reply_markup=admin_back(),
+            )
+            return True
+
+        tid, title, desc, url, reward_text, cooldown_text, xp_text, energy_text = parts
+        if desc == "-":
+            desc = ""
+        if url == "-":
+            url = None
+
         try:
-            ok=register_task(tid,title,desc,int(reward),url,int(cd),True,int(xp),int(energy))
-        except ValueError: ok=False
+            if not tid or not title:
+                raise ValueError
+            reward = int(reward_text)
+            cooldown = int(cooldown_text)
+            xp = int(xp_text)
+            energy = int(energy_text)
+            if reward < 0 or cooldown < 0 or xp < 0 or energy < 0:
+                raise ValueError
+
+            ok = register_task(
+                tid, title, desc, reward, url, cooldown, True, xp, energy
+            )
+        except (TypeError, ValueError):
+            ok = False
+
         context.user_data.clear()
-        await update.message.reply_text("✅ Task added/updated." if ok else "❌ Invalid task values.", reply_markup=admin_back())
+        await update.message.reply_text(
+            "✅ Task added/updated." if ok else
+            "❌ Invalid task values. Use whole numbers for reward, cooldown, XP and energy.",
+            reply_markup=admin_back(),
+        )
         return True
 
     if action == "add_shortlink":

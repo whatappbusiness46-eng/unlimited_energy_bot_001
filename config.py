@@ -85,8 +85,7 @@ GROUP_JOIN_REWARD = 20
 # WITHDRAW
 # ============================================================
 
-MIN_WITHDRAW = 200
-
+MIN_WITHDRAW = 1000
 # IMPORTANT:
 # Replace these placeholders with your real payment details
 # through Render Environment Variables.

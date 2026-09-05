@@ -165,6 +165,7 @@ def back_profile_keyboard():
 
 
 
+
 async def _safe_edit_message_text(query, text, **kwargs):
     try:
         return await query.edit_message_text(text, **kwargs)
