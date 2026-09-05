@@ -403,7 +403,6 @@ ENVIRONMENT = os.getenv(
 
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
 REWARD_POINTS_PER_USD = int(os.getenv("REWARD_POINTS_PER_USD", "1000"))
-CPAGRIP_USER_REWARD_PERCENT = int(os.getenv("CPAGRIP_USER_REWARD_PERCENT", "40"))
 
 # CPAGrip
 CPAGRIP_ENABLED = os.getenv("CPAGRIP_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
@@ -423,3 +422,5 @@ SHRINKME_API_KEY = os.getenv("SHRINKME_API_KEY", "")
 SHRINKME_API_URL = os.getenv("SHRINKME_API_URL", "")
 
 CONFIG_READY = True
+
+CPAGRIP_USER_REWARD_PERCENT = float(os.getenv("CPAGRIP_USER_REWARD_PERCENT", "40"))
