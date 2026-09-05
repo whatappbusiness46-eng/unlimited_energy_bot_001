@@ -261,6 +261,15 @@ def delete_provider_offer(provider: str, offer_id: str):
     return True
 
 
+def _cpagrip_user_reward_percent() -> Decimal:
+    """Percentage of approved CPAGrip payout credited to the user."""
+    try:
+        value = Decimal(_env("CPAGRIP_USER_REWARD_PERCENT", "40"))
+    except (InvalidOperation, ValueError):
+        value = Decimal("40")
+    return min(Decimal("100"), max(Decimal("0"), value))
+
+
 def _reward_points(reward):
     try:
         amount = Decimal(str(reward))
@@ -269,7 +278,10 @@ def _reward_points(reward):
         return 0
     if amount <= 0 or rate <= 0:
         return 0
-    return max(0, int((amount * rate).quantize(Decimal("1"))))
+    # 1000 points/USD is the base conversion. Only 40% of the
+    # provider payout is credited to the member by default.
+    user_share = _cpagrip_user_reward_percent() / Decimal("100")
+    return max(0, int((amount * rate * user_share).quantize(Decimal("1"))))
 
 
 def _verify_postback(provider: str, params: Dict[str, Any]) -> bool:
@@ -431,4 +443,5 @@ def provider_status():
         "cpagrip": _enabled("cpagrip") and bool(_env("CPAGRIP_OFFERS_API_URL")),
         "cpagrip_postback": bool(_env("CPAGRIP_POSTBACK_PASSWORD") or _env("CPAGRIP_POSTBACK_SECRET")),
         "reward_points_per_usd": _env("REWARD_POINTS_PER_USD", "1000"),
+        "cpagrip_user_reward_percent": str(_cpagrip_user_reward_percent()),
     }
