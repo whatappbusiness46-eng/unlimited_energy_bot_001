@@ -540,7 +540,7 @@ async def premium_page(
             f"{status['remaining_days']} days\n"
             f"⚡ Multiplier: "
             f"{status['daily_multiplier']}x\n\n"
-            "Premium is currently active."
+            "Premium is currently active.\n\n✨ Benefits:\n• Earning reward multiplier\n• Premium-only reward opportunities\n• Priority membership features\n• Extra membership perks."
         )
 
         keyboard = [
@@ -565,7 +565,7 @@ async def premium_page(
             f"⏳ Duration: "
             f"{status['days']} days\n\n"
             "✨ Premium benefits:\n"
-            "• 1.10x earning multiplier\n"
+            f"• {status['daily_multiplier']:g}x earning multiplier\n"
             "• Premium status for 30 days\n"
             "• Premium-only reward opportunities\n"
             "• Priority membership features\n\n"

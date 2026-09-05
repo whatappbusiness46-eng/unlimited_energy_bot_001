@@ -85,8 +85,7 @@ GROUP_JOIN_REWARD = 20
 # WITHDRAW
 # ============================================================
 
-MIN_WITHDRAW = 200
-
+MIN_WITHDRAW = 1000
 # IMPORTANT:
 # Replace these placeholders with your real payment details
 # through Render Environment Variables.
@@ -109,6 +108,7 @@ BYBIT_UID = os.getenv(
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "")
 
 PREMIUM_CASH_PRICE = float(os.getenv("PREMIUM_CASH_PRICE", "199"))
+PREMIUM_MULTIPLIER = float(os.getenv("PREMIUM_MULTIPLIER", "2.0"))
 VIP1_CASH_PRICE = float(os.getenv("VIP1_CASH_PRICE", "299"))
 VIP2_CASH_PRICE = float(os.getenv("VIP2_CASH_PRICE", "499"))
 VIP3_CASH_PRICE = float(os.getenv("VIP3_CASH_PRICE", "799"))
@@ -421,3 +421,5 @@ SHRINKME_API_KEY = os.getenv("SHRINKME_API_KEY", "")
 SHRINKME_API_URL = os.getenv("SHRINKME_API_URL", "")
 
 CONFIG_READY = True
+
+CPAGRIP_USER_REWARD_PERCENT = float(os.getenv("CPAGRIP_USER_REWARD_PERCENT", "40"))

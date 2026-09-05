@@ -12,7 +12,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from database import get_user
-from provider_integrations import get_provider_offers
+from provider_integrations import get_provider_offers, _reward_points
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +98,9 @@ def offers_menu(user_id: int):
         provider = str(item.get("provider", "provider"))
         offer_id = str(item.get("offer_id", ""))
         title = str(item.get("title", "Offer"))
-        reward = item.get("provider_reward", 0)
-        label = f"🎁 {title[:32]} • ${reward}"
+        payout = item.get("provider_reward", 0)
+        reward = _reward_points(payout)
+        label = f"🎁 {title[:28]} • +{reward} pts"
         callback = f"provider_offer_{_provider_offer_key(provider, offer_id)}"
         if len(callback) <= 64:
             keyboard.append([
@@ -147,7 +148,7 @@ async def offers_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for item in live[:30]:
             lines.append(
                 f"• {item.get('title', 'Offer')} — "
-                f"${item.get('provider_reward', 0)}"
+                f"Earn +{_reward_points(item.get('provider_reward', 0))} Points"
             )
         text = "\n".join(lines)
 
@@ -203,7 +204,8 @@ async def provider_offer_callback(update: Update, context: ContextTypes.DEFAULT_
         "🎁 **OFFER DETAILS**\n\n"
         f"📌 {offer.get('title', 'Offer')}\n"
         f"🏷 Provider: {provider}\n"
-        f"💵 Provider payout: ${offer.get('provider_reward', 0)}\n\n"
+        f"💵 Provider payout: ${offer.get('provider_reward', 0)}\n"
+        f"💰 Your reward: +{_reward_points(offer.get('provider_reward', 0))} Points\n\n"
         f"{offer.get('description', '')}\n\n"
         "Complete the offer according to its instructions. "
         "The bot will credit your points only after a verified "

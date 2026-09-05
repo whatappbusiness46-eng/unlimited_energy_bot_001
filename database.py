@@ -1,3 +1,4 @@
+from config import PREMIUM_MULTIPLIER
 # ============================================================
 # database.py
 # Unlimited Energy Bot V2
