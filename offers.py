@@ -1,3 +1,4 @@
+import os
 # ============================================================
 # OFFERS SYSTEM
 # Live provider-backed offers. No client-side "Claim Reward".
@@ -102,7 +103,7 @@ def offers_menu(user_id: int):
     keyboard = []
     live = _live_offers(user_id)
 
-    for item in live[:50]:
+    for item in live[:3]:
         provider = str(item.get("provider", "provider"))
         offer_id = str(item.get("offer_id", ""))
         title = str(item.get("title", "Offer"))
@@ -153,7 +154,7 @@ async def offers_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "only after the provider confirms the conversion.",
             "",
         ]
-        for item in live[:30]:
+        for item in live[:3]:
             lines.append(
                 f"• {item.get('title', 'Offer')} — "
                 f"Earn +{_reward_points(item.get('provider_reward', 0))} Points"

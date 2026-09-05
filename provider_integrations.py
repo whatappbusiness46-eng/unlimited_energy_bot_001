@@ -1,7 +1,7 @@
-import os
 CPAGRIP_OFFER_LIMIT = max(1, int(os.getenv("CPAGRIP_OFFER_LIMIT", "3")))
 # provider_integrations.py
 # CPAGrip-only live offer + verified postback integration.
+
 import hashlib
 import hmac
 import json
@@ -243,7 +243,7 @@ def get_provider_offers(user_id: int, providers: Optional[Iterable[str]] = None)
     docs = provider_offers.find(
         {"provider": {"$in": providers}}, {"_id": 0}
     ).sort("updated_at", -1).limit(100)
-    return [dict(x) for x in docs if str(x.get("offer_id")) not in disabled]
+    return _apply_cpagrip_limit([dict(x) for x in docs if str(x.get("offer_id")) not in disabled])
 
 
 def set_provider_offer_enabled(provider: str, offer_id: str, enabled: bool):
