@@ -112,16 +112,28 @@ def _extract_offer_list(payload):
         return ""
 
     items = []
+    # CPAGrip's documented RSS feed uses <offers><offer>...</offer></offers>
+    # rather than a standard RSS <item> envelope. Accept both formats.
     for node in root.iter():
         tag = node.tag.rsplit("}", 1)[-1].lower()
-        if tag != "item":
+        if tag not in {"item", "offer"}:
             continue
         raw = {
-            "title": text(node, "title", "name"),
+            "title": text(node, "title", "name", "offer_title"),
             "description": text(node, "description", "desc", "details"),
-            "link": text(node, "link", "url", "click_url", "tracking_url"),
-            "offer_id": text(node, "offer_id", "offerid", "id", "guid"),
-            "payout": text(node, "payout", "reward", "amount", "commission"),
+            "link": text(
+                node,
+                "offerlink", "offer_link", "link", "url",
+                "click_url", "tracking_url"
+            ),
+            "offer_id": text(
+                node,
+                "offer_id", "offerid", "id", "guid", "offerid"
+            ),
+            "payout": text(
+                node,
+                "payout", "reward", "amount", "commission", "revenue"
+            ),
             "category": text(node, "category", "vertical", "type"),
             "platform": text(node, "platform", "device", "os"),
         }
@@ -196,6 +208,8 @@ def sync_cpagrip_offers(user_id: int) -> int:
                 upsert=True,
             )
             count += 1
+        if count == 0:
+            logger.warning("CPAGrip feed returned no parseable offers | user=%s | url=%s", user_id, url.split("?")[0])
         return count
     except Exception:
         logger.exception("CPAGrip offer sync failed | user=%s", user_id)
