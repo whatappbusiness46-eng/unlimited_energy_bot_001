@@ -1,4 +1,3 @@
-import os
 # ============================================================
 # OFFERS SYSTEM
 # Live provider-backed offers. No client-side "Claim Reward".
@@ -21,14 +20,6 @@ logger = logging.getLogger(__name__)
 # display-only unless a real provider postback is configured.
 OFFERS: Dict[str, Dict[str, Any]] = {}
 
-
-
-def _display_limit_offers(offers):
-    try:
-        limit = max(1, int(os.getenv("CPAGRIP_OFFER_LIMIT", "3")))
-    except Exception:
-        limit = 3
-    return list(offers or [])[:limit]
 
 def _get_user(user_id):
     try:
@@ -91,6 +82,14 @@ def _parse_provider_offer_key(value: str):
     return provider, offer_id
 
 
+def _offer_display_limit() -> int:
+    try:
+        import os
+        return max(1, int(os.getenv("CPAGRIP_OFFER_LIMIT", "3")))
+    except (TypeError, ValueError):
+        return 3
+
+
 def _live_offers(user_id: int) -> list:
     try:
         return get_provider_offers(user_id)
@@ -103,12 +102,12 @@ def offers_menu(user_id: int):
     keyboard = []
     live = _live_offers(user_id)
 
-    for item in live[:3]:
+    for item in live[: _offer_display_limit()]:
         provider = str(item.get("provider", "provider"))
         offer_id = str(item.get("offer_id", ""))
         title = str(item.get("title", "Offer"))
         payout = item.get("provider_reward", 0)
-        reward = _reward_points(payout)
+        reward = _reward_points(payout, item.get("member_reward_points"))
         label = f"🎁 {title[:28]} • +{reward} pts"
         callback = f"provider_offer_{_provider_offer_key(provider, offer_id)}"
         if len(callback) <= 64:
@@ -154,10 +153,10 @@ async def offers_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "only after the provider confirms the conversion.",
             "",
         ]
-        for item in live[:3]:
+        for item in live[: _offer_display_limit()]:
             lines.append(
                 f"• {item.get('title', 'Offer')} — "
-                f"Earn +{_reward_points(item.get('provider_reward', 0))} Points"
+                f"Earn +{_reward_points(item.get('provider_reward', 0), item.get('member_reward_points'))} Points"
             )
         text = "\n".join(lines)
 
@@ -212,9 +211,7 @@ async def provider_offer_callback(update: Update, context: ContextTypes.DEFAULT_
     await query.edit_message_text(
         "🎁 **OFFER DETAILS**\n\n"
         f"📌 {offer.get('title', 'Offer')}\n"
-        f"🏷 Provider: {provider}\n"
-        f"💵 Provider payout: ${offer.get('provider_reward', 0)}\n"
-        f"💰 Your reward: +{_reward_points(offer.get('provider_reward', 0))} Points\n\n"
+        f"💰 Your reward: +{_reward_points(offer.get('provider_reward', 0), offer.get('member_reward_points'))} Points\n\n"
         f"{offer.get('description', '')}\n\n"
         "Complete the offer according to its instructions. "
         "The bot will credit your points only after a verified "

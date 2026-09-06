@@ -1,6 +1,3 @@
-import os
-
-CPAGRIP_OFFER_LIMIT = max(1, int(os.getenv("CPAGRIP_OFFER_LIMIT", "3")))
 # provider_integrations.py
 # CPAGrip-only live offer + verified postback integration.
 
@@ -9,6 +6,7 @@ import hmac
 import json
 import xml.etree.ElementTree as ET
 import logging
+import os
 import time
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Iterable, Optional
@@ -18,6 +16,8 @@ from urllib.request import Request, urlopen
 from database import db, add_balance, add_activity, get_user, record_transaction
 
 logger = logging.getLogger(__name__)
+
+CPAGRIP_OFFER_LIMIT = max(1, int(os.getenv("CPAGRIP_OFFER_LIMIT", "3")))
 
 provider_offers = db["provider_offers"]
 provider_events = db["provider_events"]
@@ -34,16 +34,15 @@ except Exception:
     logger.exception("Provider indexes could not be created.")
 
 
-
-def _apply_cpagrip_limit(offers):
-    try:
-        limit = max(1, int(os.getenv("CPAGRIP_OFFER_LIMIT", "3")))
-    except Exception:
-        limit = 3
-    return list(offers or [])[:limit]
-
 def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
+
+
+def _offer_limit() -> int:
+    try:
+        return max(1, int(os.getenv("CPAGRIP_OFFER_LIMIT", "3")))
+    except (TypeError, ValueError):
+        return 3
 
 
 def _enabled(provider: str) -> bool:
@@ -244,7 +243,7 @@ def get_provider_offers(user_id: int, providers: Optional[Iterable[str]] = None)
     docs = provider_offers.find(
         {"provider": {"$in": providers}}, {"_id": 0}
     ).sort("updated_at", -1).limit(100)
-    return _apply_cpagrip_limit([dict(x) for x in docs if str(x.get("offer_id")) not in disabled])
+    return [dict(x) for x in docs if str(x.get("offer_id")) not in disabled][: _offer_limit()]
 
 
 def set_provider_offer_enabled(provider: str, offer_id: str, enabled: bool):
@@ -271,7 +270,7 @@ def delete_provider_offer(provider: str, offer_id: str):
     return True
 
 
-def _reward_points(reward):
+def _reward_points(reward, override=None):
     """Convert provider USD payout to member points using the configured share."""
     try:
         amount = Decimal(str(reward))
@@ -279,6 +278,11 @@ def _reward_points(reward):
         share = Decimal(_env("CPAGRIP_USER_REWARD_PERCENT", "40")) / Decimal("100")
     except (InvalidOperation, ValueError, TypeError):
         return 0
+    if override is not None:
+        try:
+            return max(0, int(override))
+        except (TypeError, ValueError):
+            pass
     if amount <= 0 or rate <= 0 or share <= 0:
         return 0
     share = min(share, Decimal("1"))
@@ -348,7 +352,12 @@ def process_postback(provider: str, params: Dict[str, Any]):
         )
         return {"ok": True, "message": "reversal_recorded"}
 
-    points = _reward_points(reward_raw)
+    offer_id = str(params.get("offer_id") or params.get("offer") or "").strip()
+    override = None
+    if offer_id:
+        cached = provider_offers.find_one({"provider": provider, "offer_id": offer_id}, {"member_reward_points": 1}) or {}
+        override = cached.get("member_reward_points")
+    points = _reward_points(reward_raw, override)
     if points <= 0:
         return {"ok": False, "error": "invalid_reward"}
 
