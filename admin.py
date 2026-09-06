@@ -896,7 +896,7 @@ async def admin_shortlinks(update, context):
         "🔗 **SHORTLINK MANAGEMENT**\n\n"
         f"Configured: {len(items)}\n\n"
         "Add format: `id|name|url|reward|cooldown|provider`\n"
-        "Example: `sl1|Example|https://example.com/go|0|86400|shrtfly`",
+        "Example: `sl1|Example|https://example.com/go|100|86400|shrtfly`",
         reply_markup=InlineKeyboardMarkup(buttons),
         parse_mode="Markdown",
     )
@@ -912,8 +912,8 @@ async def admin_add_shortlink(update, context):
     context.user_data["admin_action"] = "add_shortlink"
     await query.edit_message_text(
         "🔗 **ADD SHORTLINK**\n\n"
-        "Send: `id|name|url|reward|cooldown`\n\n"
-        "Example: `sl1|Example|https://example.com/go|0|86400|shrtfly`",
+        "Send: `id|name|url|reward|cooldown|provider`\n\n"
+        "Example: `sl1|Example|https://example.com/go|100|86400|shrtfly`",
         reply_markup=admin_back(),
         parse_mode="Markdown",
     )
@@ -2763,10 +2763,6 @@ async def admin_text_handler(
                 )
                 return True
             final_url = result["short_url"]
-            # These APIs document link creation, not verified completion.
-            # Keep reward at zero unless a compliant server-to-server reward
-            # mechanism is separately documented/configured.
-            reward = 0
         if not register_shortlink(sid, name, final_url, reward=reward, cooldown=cooldown):
             await update.message.reply_text("❌ Could not save shortlink.", reply_markup=admin_back())
             return True
