@@ -111,7 +111,7 @@ def offers_menu(user_id: int):
         provider = str(item.get("provider", "provider"))
         offer_id = str(item.get("offer_id", ""))
         title = _member_offer_name(index)
-        reward = _reward_points(payout, item.get("member_reward_points"))
+        reward = _reward_points(offer.get('provider_reward', 0), item.get("member_reward_points"))
         label = f"🎁 {title[:28]} • +{reward} pts"
         callback = f"provider_offer_{_provider_offer_key(provider, offer_id)}"
         if len(callback) <= 64:

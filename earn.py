@@ -122,7 +122,7 @@ def earn_menu():
             ],
             [
                 InlineKeyboardButton(
-                    "🎁 CPA Offers",
+                    "🎁 Earn Offers",
                     callback_data="offers",
                 )
             ],
@@ -187,7 +187,7 @@ async def earn_page(
         "🎁 Daily Bonus\n"
         "📋 Complete Tasks\n"
         "🔗 Complete Shortlinks\n"
-        "🎁 CPA Offers\n"
+        "🎁 Earn Offers\n"
         "🎡 Spin Wheel\n"
         "🎁 Lucky Box\n"
         "🎫 Scratch Card\n"
