@@ -90,6 +90,11 @@ def _offer_display_limit() -> int:
         return 3
 
 
+def _member_offer_name(index: int) -> str:
+    """Generic member-facing name; never expose provider campaign titles."""
+    return f"Special Offer {index + 1}"
+
+
 def _live_offers(user_id: int) -> list:
     try:
         return get_provider_offers(user_id)
@@ -102,11 +107,10 @@ def offers_menu(user_id: int):
     keyboard = []
     live = _live_offers(user_id)
 
-    for item in live[: _offer_display_limit()]:
+    for index, item in enumerate(live[: _offer_display_limit()]):
         provider = str(item.get("provider", "provider"))
         offer_id = str(item.get("offer_id", ""))
-        title = str(item.get("title", "Offer"))
-        payout = item.get("provider_reward", 0)
+        title = _member_offer_name(index)
         reward = _reward_points(payout, item.get("member_reward_points"))
         label = f"🎁 {title[:28]} • +{reward} pts"
         callback = f"provider_offer_{_provider_offer_key(provider, offer_id)}"
@@ -153,9 +157,9 @@ async def offers_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "only after the provider confirms the conversion.",
             "",
         ]
-        for item in live[: _offer_display_limit()]:
+        for index, item in enumerate(live[: _offer_display_limit()]):
             lines.append(
-                f"• {item.get('title', 'Offer')} — "
+                f"• {_member_offer_name(index)} — "
                 f"Earn +{_reward_points(item.get('provider_reward', 0), item.get('member_reward_points'))} Points"
             )
         text = "\n".join(lines)
@@ -208,9 +212,18 @@ async def provider_offer_callback(update: Update, context: ContextTypes.DEFAULT_
         await query.edit_message_text("⚠️ Offer link unavailable.")
         return
 
+    try:
+        display_index = next(
+            i for i, x in enumerate(items[: _offer_display_limit()])
+            if str(x.get("provider")) == provider and str(x.get("offer_id")) == offer_id
+        )
+    except StopIteration:
+        display_index = 0
+    member_name = _member_offer_name(display_index)
+
     await query.edit_message_text(
         "🎁 **OFFER DETAILS**\n\n"
-        f"📌 {offer.get('title', 'Offer')}\n"
+        f"📌 {member_name}\n"
         f"💰 Your reward: +{_reward_points(offer.get('provider_reward', 0), offer.get('member_reward_points'))} Points\n\n"
         f"{offer.get('description', '')}\n\n"
         "Complete the offer according to its instructions. "
